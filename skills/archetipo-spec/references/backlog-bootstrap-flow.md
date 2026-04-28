@@ -182,7 +182,7 @@ Emanuele validates:
 
 ## Phase 5 - Output Generation
 
-Pipe a JSON payload into `.archetipo/bin/archetipo backlog save`:
+Pipe a JSON payload into `.archetipo/bin/archetipo story add`:
 
 ```json
 {"stories":[{"code":"US-001","title":"...","epic":{"code":"EP-001","title":"..."},"priority":"HIGH","story_points":3,"status":"TODO","scope":"MVP","blocked_by":[],"body":"<story markdown>"}, ...]}

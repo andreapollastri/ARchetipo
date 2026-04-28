@@ -41,7 +41,6 @@ func withConnector(cmd *cobra.Command, s streams, kind string, fn func(ctx conte
 	}
 	data, err := fn(cmd.Context(), conn)
 	if err != nil {
-		iox.WriteError(s.err, err)
 		return err
 	}
 	if err := iox.WriteOK(s.out, kind, data); err != nil {

@@ -31,14 +31,23 @@ The skill should never branch on `message` (free-text); branch on `code`.
 | Code | Meaning |
 |---|---|
 | `0` | success |
-| `1` | generic error |
+| `1` | generic error (includes `E_NOT_FOUND`, `E_CONFLICT`, `E_INTERNAL`) |
 | `2` | invalid input (bad flag, malformed stdin JSON) |
 | `3` | connector failure (auth, network, gh, fs) |
 | `4` | precondition missing (e.g. backlog absent) |
 
 ### Error codes (`error.code`)
 
-`E_INVALID_INPUT`, `E_AUTH_SCOPE`, `E_NETWORK`, `E_CONNECTOR`, `E_PRECONDITION`, `E_NOT_FOUND`, `E_CONFLICT`, `E_INTERNAL`.
+| Code | Used when |
+|---|---|
+| `E_INVALID_INPUT` | Bad flag combination or malformed stdin JSON |
+| `E_AUTH_SCOPE` | `gh` is missing the required scopes |
+| `E_NETWORK` | Transient network failure talking to GitHub |
+| `E_CONNECTOR` | Backend (filesystem, gh) reported an unexpected failure |
+| `E_PRECONDITION` | A required artifact is missing (no backlog, no eligible story, no plan) |
+| `E_NOT_FOUND` | A specific artifact (story, task) referenced by code does not exist |
+| `E_CONFLICT` | Operation cannot proceed from the current state (e.g. `story start` on a TODO story) |
+| `E_INTERNAL` | Unexpected internal error |
 
 ### Configuration
 
@@ -65,13 +74,11 @@ workflow:
 
 ## Operation Catalog
 
-> Every command emits an envelope with `schema: archetipo/v1`. The `kind` of each envelope is listed below; `data.*` fields follow the schemas in [domain types](#domain-types).
+The CLI exposes 9 operations grouped by entity. Every command emits an envelope with `schema: archetipo/v1`. The `kind` of each envelope is listed below; `data.*` fields follow the schemas in [domain types](#domain-types).
 
-### SETUP
+### `archetipo init`
 
-#### `archetipo init` — initialize_connector
-
-Authenticate, detect repo/project, load metadata.
+Authenticate, detect repo/project, load metadata. Idempotent.
 
 - **Args:** none
 - **Stdin:** none
@@ -82,74 +89,150 @@ Authenticate, detect repo/project, load metadata.
 .archetipo/bin/archetipo init
 ```
 
-### READ
+### `archetipo prd write`
 
-#### `archetipo backlog list` — fetch_backlog_items
+Persist the PRD markdown.
 
-- **Args:** `--status <STATUS>` (optional) filter by workflow status.
-- **Stdout kind:** `stories` — `data.items: Story[]`.
-
-#### `archetipo story select` — select_story
-
-- **Args:** `--story US-XXX` (specific story) **or** `--auto` with `--eligible TODO,PLANNED` (comma-separated). `--story` and `--auto` are mutually exclusive; default is auto-select with `--eligible TODO`.
-- **Stdout kind:** `story` — `data` is a `Story`.
-- **Errors:** `E_PRECONDITION` (no eligible stories or US-XXX not found).
-
-#### `archetipo story read` — read_story_detail
-
-- **Args:** `--ref US-XXX` (required).
-- **Stdout kind:** `story`.
-
-#### `archetipo tasks read` — read_story_tasks
-
-- **Args:** `--ref US-XXX` (required, parent story).
-- **Stdout kind:** `tasks` — `data.items: Task[]`.
-- **Errors:** `E_PRECONDITION` (no plan saved yet).
-
-#### `archetipo backlog existing` — read_existing_backlog
-
-Idempotency metadata for extending an existing backlog.
-
-- **Stdout kind:** `backlog_summary` — `data: BacklogSummary` with `codes`, `last_code`, `epics`, `titles`.
-
-### WRITE
-
-All write operations emit `kind: write_result` with `data: {ok: boolean, refs: Ref[]}`.
-
-#### `archetipo prd save` — save_prd
-
+- **Args:** none
 - **Stdin:** raw markdown body.
+- **Stdout kind:** `write_result`.
 - **Errors:** filesystem errors as `E_CONNECTOR`.
 
-#### `archetipo backlog save` — save_initial_backlog
+```bash
+cat PRD.md | .archetipo/bin/archetipo prd write
+```
 
+### `archetipo backlog show`
+
+Aggregated read of the backlog: filtered items + idempotency summary in a single envelope.
+
+- **Args:** `--status <STATUS>` (optional) filter `items` by workflow status.
+- **Stdin:** none
+- **Stdout kind:** `backlog` — `data: {items: Story[], summary: BacklogSummary}`. `summary` is always the full backlog metadata regardless of `--status`.
+- **Errors:** none in normal use; an empty backlog returns `items: []` and an empty `summary`.
+
+```bash
+.archetipo/bin/archetipo backlog show --status TODO
+```
+
+### `archetipo story add`
+
+Idempotent create-or-append on the backlog. Replaces both `backlog save` and `backlog append`: stories whose `code` is already present are skipped and reported in `data.skipped`.
+
+- **Args:** none
 - **Stdin JSON:** `{"stories":[Story, ...]}`.
-- **Errors:** `E_CONFLICT` if a non-empty backlog already exists. Use `backlog append` instead.
+- **Stdout kind:** `write_result` — `data.skipped: string[]` lists codes that were not written because they already existed.
+- **Errors:** `E_INVALID_INPUT` (no stories on stdin), `E_CONNECTOR` (filesystem/gh failure).
 
-#### `archetipo backlog append` — append_stories
+```bash
+cat stories.json | .archetipo/bin/archetipo story add
+```
 
-- **Stdin JSON:** `{"stories":[Story, ...]}`. Stories whose `code` already exists are skipped.
+### `archetipo story show`
 
-#### `archetipo plan save` — save_plan
+Read a story's body together with its task list. Two mutually exclusive forms:
 
-- **Args:** `--ref US-XXX` (parent story).
+- **Form A (lookup by code):** `archetipo story show US-XXX` → returns the story matching the code.
+- **Form B (auto-select):** `archetipo story show --status STATUS` → returns the first eligible story sorted by priority (HIGH > MEDIUM > LOW) then by story code.
+
+If both `<US-XXX>` and `--status` are passed (or neither), the CLI returns `E_INVALID_INPUT`.
+
+- **Stdout kind:** `story` — `data: {story: Story, tasks: Task[]}`. `tasks` is `[]` when the story has no plan yet (not an error).
+- **Errors:** `E_PRECONDITION` (no eligible story / story not found), `E_INVALID_INPUT` (form mismatch).
+
+```bash
+.archetipo/bin/archetipo story show US-005
+.archetipo/bin/archetipo story show --status TODO
+```
+
+### `archetipo story plan US-XXX`
+
+Save the implementation plan and transition the story to `PLANNED`. Atomic from the skill's perspective.
+
+- **Args:** `<US-XXX>` (positional, required).
 - **Stdin JSON:** `{"plan_body":"<markdown>","tasks":[Task, ...]}`.
-- **Effect (file):** writes `{paths.planning}/{US-XXX}.md` with the canonical layout (preamble marker, plan body, tasks marker, GFM table).
-- **Effect (github):** appends the plan body to the parent issue, creates one sub-issue per task, links sub-issues to parent.
+- **Stdout kind:** `write_result`.
+- **Effect (file):** writes `{paths.planning}/{US-XXX}.md` with the canonical layout, then updates the status of `US-XXX` in `BACKLOG.md` to `PLANNED`.
+- **Effect (github):** appends the plan body to the parent issue, creates one sub-issue per task, then moves the project card to `PLANNED`.
+- **Idempotent:** re-running on a `PLANNED` story upserts the plan body without erroring.
+- **Errors:** `E_CONFLICT` when the story is past `PLANNED` (e.g. `IN PROGRESS`, `REVIEW`, `DONE`); `E_PRECONDITION` (story not found).
 
-#### `archetipo status set` — transition_status
+```bash
+cat plan.json | .archetipo/bin/archetipo story plan US-005
+```
 
-- **Args:** `--ref US-XXX --to <STATUS>` (status from `workflow.statuses`).
+### `archetipo story start US-XXX`
 
-#### `archetipo task complete` — complete_task
+Transition a story from `PLANNED` to `IN PROGRESS`.
 
-- **Args:** `--parent US-XXX --ref TASK-NN`.
+- **Args:** `<US-XXX>` (positional, required).
+- **Stdin:** none.
+- **Stdout kind:** `write_result`.
+- **Idempotent:** calling `start` on a story already `IN PROGRESS` is a no-op success.
+- **Errors:** `E_CONFLICT` when the story is in any state other than `PLANNED` or `IN PROGRESS`.
 
-#### `archetipo comment post` — post_comment
+```bash
+.archetipo/bin/archetipo story start US-005
+```
 
-- **Args:** `--ref US-XXX`.
-- **Stdin:** raw markdown body.
-- **Note:** no-op for the file connector (returns `ok: true`).
+### `archetipo story review US-XXX`
+
+Transition a story from `IN PROGRESS` to `REVIEW`. Optionally posts a closing comment.
+
+- **Args:** `<US-XXX>` (positional, required).
+- **Stdin:** raw markdown body, optional. When non-empty, it is posted as a comment on the story (no-op for the file connector — comment is silently ignored).
+- **Stdout kind:** `write_result`.
+- **Idempotent:** calling `review` on a story already in `REVIEW` is a no-op success; if stdin is non-empty in this case the comment is still posted.
+- **Errors:** `E_CONFLICT` when the story is in any state other than `IN PROGRESS` or `REVIEW`.
+
+```bash
+echo "Closing notes" | .archetipo/bin/archetipo story review US-005
+.archetipo/bin/archetipo story review US-005   # transition only, no comment
+```
+
+### `archetipo task done US-XXX TASK-NN`
+
+Mark a single task within a story's plan as completed.
+
+- **Args:** `<US-XXX>` (parent story, positional), `<TASK-NN>` (task code, positional).
+- **Stdin:** none.
+- **Stdout kind:** `write_result`.
+- **Effect (file):** flips the `[ ]` checkbox to `[x]` in the plan file.
+- **Effect (github):** closes the sub-issue.
+- **Errors:** `E_PRECONDITION` (story or task not found).
+
+```bash
+.archetipo/bin/archetipo task done US-005 TASK-01
+```
+
+---
+
+## Workflow at a glance
+
+```
+                    ┌─ archetipo prd write ──┐
+                    │                         │
+         (PRD)──────┘                         │
+                                              ▼
+              ┌─ archetipo story add ──────► BACKLOG (TODO stories)
+              │                                  │
+              │                                  ▼
+              │             ┌── archetipo story show <code | --status TODO>
+              │             │
+              │             ▼
+              │   archetipo story plan US-XXX  →  PLANNED
+              │             │
+              │             ▼
+              │   archetipo story start US-XXX  →  IN PROGRESS
+              │             │
+              │             ├── archetipo task done US-XXX TASK-NN  (per task)
+              │             ▼
+              │   archetipo story review US-XXX  →  REVIEW
+              │
+              └─ archetipo backlog show [--status]   (read-only, any time)
+```
+
+The CLI does not transition stories to `DONE`; that is left to the human reviewer or the CI/CD pipeline.
 
 ---
 
@@ -198,6 +281,16 @@ All field names in JSON are `snake_case`.
 
 `number`, `path`, `url` are populated only when the connector has one.
 
+### `WriteResult`
+
+```jsonc
+{
+  "ok": true,
+  "refs": [{"code": "US-003", "path": "docs/BACKLOG.md"}],
+  "skipped": ["US-001"]          // optional; populated by `story add` for codes already present
+}
+```
+
 ### `SetupInfo`
 
 ```jsonc
@@ -226,7 +319,10 @@ All field names in JSON are `snake_case`.
 ## Notes for skill authors
 
 - **Call only what you need.** Not every skill uses every command. Unused commands have zero cost.
+- **Domain verbs encode workflow.** The CLI exposes `plan`, `start`, `review` instead of a generic `status set`. Skills don't need to know the literal status strings (`PLANNED`, `IN PROGRESS`, ...) — they just call the verb that matches their phase.
+- **Idempotent transitions.** Re-running `story plan / start / review` on a story that is already at the target state is a no-op success. This means a skill can safely retry a step without conditional logic. Calling a verb from a wrong source state returns `E_CONFLICT`.
+- **`story add` is idempotent.** Skills that extend the backlog don't need to inspect existing codes first: they pass the full set and the CLI skips duplicates, reporting them in `data.skipped`.
+- **`story show` covers both lookup and auto-pick.** Use the positional code form when you know which story to read; use `--status` when you want the next eligible story by priority.
 - **Content templates belong to the skill, not to the CLI.** The skill produces the markdown body of stories, plans, comments and PRDs. The CLI persists what the skill emits and adds machine-readable markers around it.
 - **Branch on error `code`, not on `message`.** The CLI guarantees stable codes; messages are human-readable and may change.
-- **No-op operations are explicit.** `comment post` returns `ok: true` even when the file connector has no comment store. Skills never need to suppress those calls.
 - **Compose with stdin/stdout.** Every command that takes content reads it from stdin; every command that returns data writes a single JSON envelope to stdout. Pipe and parse.

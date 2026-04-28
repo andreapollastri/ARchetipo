@@ -49,6 +49,6 @@ Load context progressively and keep the working context lean:
 ## Output Boundaries
 
 - Produce the PRD using `references/prd-template.md` as the format template
-- Persist the PRD by piping the markdown into `.archetipo/bin/archetipo prd save` and verifying the resulting `write_result` envelope
+- Persist the PRD by piping the markdown into `.archetipo/bin/archetipo prd write` and verifying the resulting `write_result` envelope
 - Do not generate or mutate backlog artifacts in this skill
 - If the user asks for backlog generation, epics, or user stories from an existing PRD, that belongs to `archetipo-spec`

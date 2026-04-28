@@ -10,16 +10,16 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
 )
 
-// newPRDCmd builds `archetipo prd save` -> save_prd. Stdin is the raw markdown.
+// newPRDCmd builds `archetipo prd write` -> save_prd. Stdin is the raw markdown.
 func newPRDCmd(s streams) *cobra.Command {
 	root := &cobra.Command{Use: "prd", Short: "PRD operations"}
-	root.AddCommand(newPRDSaveCmd(s))
+	root.AddCommand(newPRDWriteCmd(s))
 	return root
 }
 
-func newPRDSaveCmd(s streams) *cobra.Command {
+func newPRDWriteCmd(s streams) *cobra.Command {
 	return &cobra.Command{
-		Use:   "save",
+		Use:   "write",
 		Short: "Persist the PRD markdown read from stdin",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

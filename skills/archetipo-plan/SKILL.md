@@ -46,14 +46,16 @@ Agents appear only in the **Team Brief** output. Each agent speaks **1-3 sentenc
 
 #### Step 1 — Story Selection
 
-1. Run `.archetipo/bin/archetipo backlog list --status {config.workflow.statuses.todo}`. If the envelope reports `error.code = E_PRECONDITION` (no backlog), tell the user to run `archetipo-spec` first and stop.
+Run `.archetipo/bin/archetipo story show` with one of the two mutually exclusive forms:
 
-2. Run `.archetipo/bin/archetipo story select` with the appropriate flags:
-   - If a user story code was passed (e.g. "US-005"): `--story US-005`
-   - Free-text descriptions are not supported as story selectors. If the user passes free text, route to `archetipo-spec` to add the story first.
-   - If no argument was passed: `--eligible {config.workflow.statuses.todo}` (auto-select)
+- If a user story code was passed (e.g. "US-005"): `archetipo story show US-005`
+- If no argument was passed: `archetipo story show --status {config.workflow.statuses.todo}` (auto-select first eligible by priority + code)
 
-3. If `error.code = E_PRECONDITION`, inform the user that no eligible stories exist and stop.
+Free-text descriptions are not supported as story selectors. If the user passes free text, route to `archetipo-spec` to add the story first.
+
+The envelope returns `data: {story, tasks}`. If a plan already exists `data.tasks` is populated — see Step 2 below for the overwrite handling.
+
+If `error.code = E_PRECONDITION` (no eligible stories) or `E_NOT_FOUND` (story code not in the backlog), inform the user and stop.
 
 #### Step 2 — Context Loading (parallel)
 
@@ -62,7 +64,7 @@ After selecting the story, read ALL context in a **single turn with parallel too
 - `{config.paths.mockups}/` contents (if exists)
 - Relevant codebase files: schema/model definition files, existing related source files, existing tests
 - If the target story has a `Blocked by` field with values other than `-`, read those blocking stories from the backlog to understand preconditions and shared context
-- Check if `{config.paths.planning}/{US-CODE}.md` already exists (if so, ask user: overwrite or skip)
+- If `data.tasks` from Step 1 was non-empty, a plan already exists. Ask the user: overwrite, create a new revision, or skip. Never silently overwrite.
 
 #### Step 3 — Announce
 
@@ -148,23 +150,21 @@ In a **single turn**, produce both:
 🧪 **Mina:** [1 sentence on test strategy focus]
 ```
 
-**2. Write the planning document:**
+**2. Save the plan and transition the story:**
 
-Pipe a JSON payload into `.archetipo/bin/archetipo plan save --ref {US-CODE}` containing:
+Pipe a JSON payload into `.archetipo/bin/archetipo story plan {US-CODE}` containing:
 
 ```json
 {"plan_body":"<technical solution + test strategy as markdown>","tasks":[{"id":"TASK-01","title":"...","description":"...","type":"Impl|Test","status":"TODO","dependencies":[]}]}
 ```
 
-The CLI persists according to the active connector (file: writes `{paths.planning}/{US-CODE}.md`; github: appends to the parent issue body and creates one sub-issue per task). For the file connector, follow the template in `references/plan-template.md` to compose `plan_body`.
+This single command saves the plan AND transitions the story to `{config.workflow.statuses.planned}` atomically — no separate `status set` step is needed. The CLI persists according to the active connector (file: writes `{paths.planning}/{US-CODE}.md`; github: appends to the parent issue body and creates one sub-issue per task). For the file connector, follow the template in `references/plan-template.md` to compose `plan_body`. Re-running the command on a story already in `PLANNED` upserts the plan body without erroring.
 
-### STAGE 2 — Backlog Update & Close
+### STAGE 2 — Close
 
-After saving the planning document:
+After saving the plan:
 
-1. **Update backlog status:** Run `.archetipo/bin/archetipo status set --ref {US-CODE} --to {config.workflow.statuses.planned}`.
-
-2. **Confirm completion:**
+1. **Confirm completion:**
 
 ```
 [Detected language: adapt this block]

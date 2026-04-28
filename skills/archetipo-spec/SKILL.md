@@ -66,10 +66,10 @@ Extract and keep available from `data`:
 
 Use this routine whenever the skill must decide whether it is extending an existing backlog or creating the first one.
 
-Run `.archetipo/bin/archetipo backlog existing` and parse the JSON envelope. The CLI returns codes, last code, epics, and titles for the existing backlog.
+Run `.archetipo/bin/archetipo backlog show` and parse the JSON envelope. The CLI returns `data.items` (full Story objects) and `data.summary` with codes, last code, epics, and titles for the existing backlog.
 
-If existing stories are found, use them as the source of truth for backlog extension.
-If `error.code` is `E_PRECONDITION` (no backlog yet), treat the project as backlog-less and route to initial backlog creation.
+If `data.summary.codes` is non-empty, use the existing stories as the source of truth for backlog extension.
+If `data.summary.codes` is empty, treat the project as backlog-less and route to initial backlog creation.
 
 **Fallback search** (only when the CLI reports no backlog and `connector: file`):
 1. Search markdown files in `docs/` — prefer files whose name or content indicates they are a backlog

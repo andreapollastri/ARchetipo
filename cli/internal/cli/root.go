@@ -9,6 +9,7 @@ import (
 
 	// Concrete connectors register themselves via init().
 	_ "github.com/techreloaded-ar/ARchetipo/cli/internal/connector/builtin"
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/version"
 )
 
@@ -23,6 +24,9 @@ import (
 //	2  input/validation error
 //	3  connector error (auth, network, gh)
 //	4  precondition missing (e.g. backlog absent)
+//
+// On error, the JSON envelope is written to stderr exactly once: sub-commands
+// return typed errors and Execute serializes them, so handlers don't have to.
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root := newRootCmd(stdin, stdout, stderr)
 	root.SetArgs(args)
@@ -30,8 +34,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	if err := root.Execute(); err != nil {
-		// cobra has already written the error to stderr via the default
-		// behavior; we just translate to an exit code.
+		iox.WriteError(stderr, err)
 		return exitCodeFor(err)
 	}
 	return 0
@@ -43,24 +46,19 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		Short:         "ARchetipo connector CLI",
 		Long:          "Deterministic CLI implementing the ARchetipo connector contracts (file and github).",
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
 		Version:       version.Version,
 	}
 	cmd.SetVersionTemplate(fmt.Sprintf("archetipo %s\n", version.Version))
-	// Cancel sub-command contexts when cobra is told to abort.
 	cmd.SetContext(context.Background())
 
 	s := streams{in: stdin, out: stdout, err: stderr}
 	cmd.AddCommand(
 		newInitCmd(s),
+		newPRDCmd(s),
 		newBacklogCmd(s),
 		newStoryCmd(s),
-		newTasksCmd(s),
-		newPRDCmd(s),
-		newPlanCmd(s),
-		newStatusCmd(s),
 		newTaskCmd(s),
-		newCommentCmd(s),
 	)
 	return cmd
 }

@@ -52,13 +52,13 @@ With you today:
 
 ### Step 2 - Backlog and PRD Loading
 
-Run `.archetipo/bin/archetipo backlog existing` and extract from the returned `BacklogSummary`:
-- existing epics (`EP-XXX` + titles, from `epics`)
-- the last `US-XXX` code used (from `last_code`)
-- ticket statuses already in use (combine with `archetipo backlog list` if needed)
-- the backlog language (infer from titles)
+Run `.archetipo/bin/archetipo backlog show` and extract from the returned envelope:
+- existing epics from `data.summary.epics` (`EP-XXX` + titles)
+- the last `US-XXX` code used from `data.summary.last_code`
+- ticket statuses already in use, scanning `data.items` for the `status` field of each story
+- the backlog language (infer from `data.summary.titles`)
 
-If the CLI returns `error.code = E_PRECONDITION` (no backlog yet), switch to initial backlog creation instead of failing.
+If `data.summary.codes` is empty, switch to initial backlog creation instead of failing.
 
 Read `{config.paths.prd}` if available and extract vision, personas, MVP scope as supporting context.
 
@@ -152,13 +152,13 @@ Proceed with adding them? Or tell me what to change.
 
 ## Phase 3 - Output
 
-Pipe a JSON payload into `.archetipo/bin/archetipo backlog append`:
+Pipe a JSON payload into `.archetipo/bin/archetipo story add`:
 
 ```json
 {"stories":[{"code":"US-NNN","title":"...", ...}]}
 ```
 
-The CLI handles the persistence details (file append, issue creation, project field updates, label creation for new epics, etc.). Stories whose `code` already exists are skipped silently.
+The CLI handles the persistence details (file append, issue creation, project field updates, label creation for new epics, etc.). The same command works whether the backlog already exists or is being created fresh — stories whose `code` already exists are listed in `data.skipped` and not re-written.
 
 ### Closing Message
 

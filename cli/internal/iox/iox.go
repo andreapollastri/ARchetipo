@@ -111,6 +111,18 @@ func NewInternal(message string, cause error) *CodedError {
 	return &CodedError{Code: CodeInternal, Message: message, Exit: ExitGeneric, Cause: cause}
 }
 
+// NewNotFound builds an error for a referenced artifact (story, task, ...) that
+// the connector could not locate.
+func NewNotFound(message, hint string, cause error) *CodedError {
+	return &CodedError{Code: CodeNotFound, Message: message, Hint: hint, Exit: ExitGeneric, Cause: cause}
+}
+
+// NewConflict builds an error when an operation cannot proceed from the current
+// state of the artifact (e.g. `story start` on a TODO story).
+func NewConflict(message, hint string, cause error) *CodedError {
+	return &CodedError{Code: CodeConflict, Message: message, Hint: hint, Exit: ExitGeneric, Cause: cause}
+}
+
 // WriteOK marshals data as a success envelope on the given writer.
 func WriteOK(w io.Writer, kind string, data any) error {
 	enc := json.NewEncoder(w)

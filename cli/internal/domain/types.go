@@ -164,9 +164,14 @@ type Ref struct {
 }
 
 // WriteResult is the canonical envelope-level data for write operations.
+//
+// Skipped lists the codes that the CLI intentionally did not write because
+// they would conflict with existing artifacts (e.g. `archetipo story add`
+// idempotently skips stories whose code is already present in the backlog).
 type WriteResult struct {
-	OK   bool  `json:"ok"`
-	Refs []Ref `json:"refs,omitempty"`
+	OK      bool     `json:"ok"`
+	Refs    []Ref    `json:"refs,omitempty"`
+	Skipped []string `json:"skipped,omitempty"`
 }
 
 // PlanInput is the stdin payload of `archetipo plan save`.
