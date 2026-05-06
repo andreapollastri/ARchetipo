@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -88,10 +87,13 @@ func (c *Connector) lookupProjectByNumber(ctx context.Context, owner string, num
 		"remove or correct github.project_number in .archetipo/config.yaml", nil)
 }
 
-// findProjectByTitlePipeline applies the legacy preference pipeline used when
-// the config has no project_number: exact "<repo> Backlog" title, then any
-// title containing "Backlog", then the lowest-numbered project. Returns
-// (nil, nil) when nothing matches; the caller decides whether to create.
+// findProjectByTitlePipeline looks up the project owned by repo.Owner whose
+// title matches "<repo> Backlog" exactly. Returns (nil, nil) when nothing
+// matches so the caller can create a fresh board. Partial-title or
+// lowest-numbered fallbacks are intentionally absent: they previously caused
+// init to attach a repo to a project owned by a different repo (e.g. "Artly"
+// reusing "Tela Backlog" because both share the owner and the title contains
+// "Backlog").
 func (c *Connector) findProjectByTitlePipeline(ctx context.Context, repo *domain.RepoInfo) (*domain.ProjectInfo, error) {
 	var raw struct {
 		Projects []struct {
@@ -107,30 +109,10 @@ func (c *Connector) findProjectByTitlePipeline(ctx context.Context, repo *domain
 		return nil, err
 	}
 	exactTitle := repo.Name + " Backlog"
-	type cand struct {
-		num   int
-		id    string
-		title string
-		url   string
-	}
-	candidates := make([]cand, 0, len(raw.Projects))
 	for _, p := range raw.Projects {
-		candidates = append(candidates, cand{p.Number, p.ID, p.Title, p.URL})
-	}
-	for _, p := range candidates {
-		if p.title == exactTitle {
-			return c.loadProjectFields(ctx, repo, p.num, p.id, p.url)
+		if p.Title == exactTitle {
+			return c.loadProjectFields(ctx, repo, p.Number, p.ID, p.URL)
 		}
-	}
-	for _, p := range candidates {
-		if strings.Contains(p.title, "Backlog") {
-			return c.loadProjectFields(ctx, repo, p.num, p.id, p.url)
-		}
-	}
-	if len(candidates) > 0 {
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].num < candidates[j].num })
-		p := candidates[0]
-		return c.loadProjectFields(ctx, repo, p.num, p.id, p.url)
 	}
 	return nil, nil
 }

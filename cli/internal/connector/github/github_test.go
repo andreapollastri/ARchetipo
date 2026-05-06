@@ -52,17 +52,26 @@ func TestInitializeConnector_HappyPath(t *testing.T) {
 	}
 }
 
-// TestProjectPreference_TitleContainsBacklog covers the second tier of the
-// preference pipeline: when no exact title match exists, prefer one that
-// contains "Backlog".
-func TestProjectPreference_TitleContainsBacklog(t *testing.T) {
+// TestProjectPreference_NoExactMatchCreatesNew is the regression test for the
+// Artly/Tela bug: when the owner already has projects whose titles contain
+// "Backlog" (e.g. "Tela Backlog") but none matches the current repo exactly
+// ("Artly Backlog"), the resolver must NOT reuse the unrelated board — it
+// must create a fresh one for the current repo.
+func TestProjectPreference_NoExactMatchCreatesNew(t *testing.T) {
 	m := newMock(t).
-		on("repo view --json", `{"id":"R","owner":{"login":"o"},"name":"n","nameWithOwner":"o/n"}`).
-		on("project list --owner o", `{"projects":[
-			{"number":7,"id":"PVT7","title":"Tracking","url":""},
-			{"number":3,"id":"PVT3","title":"Sprint Backlog","url":""}
+		on("repo view --json", `{"id":"R","owner":{"login":"sleli"},"name":"Artly","nameWithOwner":"sleli/Artly"}`).
+		on("project list --owner sleli", `{"projects":[
+			{"number":11,"id":"PVT11","title":"Tela Backlog","url":""},
+			{"number":7,"id":"PVT7","title":"FoodCost Backlog","url":""}
 		]}`).
-		on("project field-list 3", `{"fields":[]}`)
+		on("project create --owner sleli --title Artly Backlog --format json",
+			`{"number":12,"id":"PVT12","url":"https://gh/p/12"}`).
+		on("project field-create 12 --owner sleli --name Priority", "ok").
+		on("project field-create 12 --owner sleli --name Story Points", "ok").
+		on("project field-list 12", `{"fields":[
+			{"id":"FID_status","name":"Status","type":"SINGLE_SELECT","options":[]}
+		]}`).
+		on("api graphql", `{"data":{"updateProjectV2Field":{"projectV2Field":{"id":"FID_status"}}}}`)
 
 	cfg := config.Default()
 	cfg.Connector = config.ConnectorGitHub
@@ -72,8 +81,11 @@ func TestProjectPreference_TitleContainsBacklog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Project.Number != 3 {
-		t.Errorf("expected project 3 (contains Backlog), got %d", info.Project.Number)
+	if info.Project.Number != 12 {
+		t.Errorf("expected freshly created project 12, got %d (cross-repo reuse regression)", info.Project.Number)
+	}
+	if m.calledWithPrefix("project field-list 11") {
+		t.Errorf("must NOT load fields of unrelated project 11 (Tela Backlog)")
 	}
 }
 
