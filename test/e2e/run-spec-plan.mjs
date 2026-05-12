@@ -456,20 +456,12 @@ async function prepareWorkspace(context) {
 }
 
 async function installWorkspace(context) {
-  const installScript = path.join(repoRoot, "install.sh");
+  const invocation = getInstallerInvocation(context);
   const install = await runLoggedCommand({
     ...context,
     step: "install",
-    command: "bash",
-    args: [
-      installScript,
-      "--local",
-      "--tool",
-      context.backend.tool,
-      "--connector",
-      context.connector,
-      "--yes",
-    ],
+    command: invocation.command,
+    args: invocation.args,
   });
   if (!install.ok) {
     throw new Error(`Installer failed: ${install.stderr || install.stdout || `exit ${install.code}`}`);
@@ -480,7 +472,7 @@ async function verifyInstallation(context) {
   const requiredPaths = [
     context.skillRoot("archetipo-spec"),
     context.skillRoot("archetipo-plan"),
-    path.join(context.sandboxDir, ".archetipo", "bin", "archetipo"),
+    getCliBinaryPath(context.sandboxDir),
     path.join(context.sandboxDir, ".archetipo", "config.yaml"),
     path.join(context.sandboxDir, ".archetipo", "shared-runtime.md"),
   ];
@@ -500,7 +492,7 @@ async function verifyInstallation(context) {
 }
 
 async function readCliEnvelope(context, step, cliArgs) {
-  const archetipoPath = path.join(context.sandboxDir, ".archetipo", "bin", "archetipo");
+  const archetipoPath = getCliBinaryPath(context.sandboxDir);
   const result = await runLoggedCommand({
     ...context,
     step,
@@ -519,7 +511,7 @@ async function readCliEnvelope(context, step, cliArgs) {
 }
 
 async function readOptionalBacklog(context) {
-  const archetipoPath = path.join(context.sandboxDir, ".archetipo", "bin", "archetipo");
+  const archetipoPath = getCliBinaryPath(context.sandboxDir);
   const result = await runLoggedCommand({
     ...context,
     step: "backlog-before",
@@ -611,6 +603,47 @@ function resolveProjectPath(projectRoot, maybeRelative) {
   return path.join(projectRoot, maybeRelative);
 }
 
+function getInstallerInvocation(context) {
+  if (process.platform === "win32") {
+    const installScript = path.join(repoRoot, "install.ps1");
+    return {
+      command: "powershell",
+      args: [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        installScript,
+        "-Local",
+        "-Tool",
+        context.backend.tool,
+        "-Connector",
+        context.connector,
+        "-Yes",
+      ],
+    };
+  }
+
+  const installScript = path.join(repoRoot, "install.sh");
+  return {
+    command: "bash",
+    args: [
+      installScript,
+      "--local",
+      "--tool",
+      context.backend.tool,
+      "--connector",
+      context.connector,
+      "--yes",
+    ],
+  };
+}
+
+function getCliBinaryPath(sandboxDir) {
+  const executable = process.platform === "win32" ? "archetipo.exe" : "archetipo";
+  return path.join(sandboxDir, ".archetipo", "bin", executable);
+}
+
 async function runLoggedCommand({ sandboxDir, artifactsDir, step, command, args, timeoutMs }) {
   const startedAt = Date.now();
   const stdoutChunks = [];
@@ -620,6 +653,7 @@ async function runLoggedCommand({ sandboxDir, artifactsDir, step, command, args,
     cwd: sandboxDir,
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
   });
 
   child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));

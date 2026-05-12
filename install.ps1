@@ -1,15 +1,22 @@
-# ─── ARchetipo Installer ─────────────────────────────────────────────────────
+﻿# ─── ARchetipo Installer ─────────────────────────────────────────────────────
 # Installs ARchetipo skills + config for Claude Code, Codex, Gemini CLI, OpenCode, GitHub Copilot
 # Usage: irm https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.ps1 | iex
-#        .\install.ps1 [-Local] [-Cleanup] [-Help]
+#        .\install.ps1 [-Local] [-Cleanup] [-Tool codex] [-Connector file] [-Yes] [-Help]
 #   -Local    Installs from local .\skills\ folder instead of GitHub
 #   -Cleanup  Removes installed skills from selected tools
+#   -Tool     Installs or cleans up a single tool without prompts
+#   -Connector Selects connector without prompts
+#   -Yes      Accepts overwrite prompts automatically
 #   -Help     Shows this help message
 # ──────────────────────────────────────────────────────────────────────────────
 
 param(
   [switch]$Local,
   [switch]$Cleanup,
+  [string]$Tool,
+  [ValidateSet("file", "github")]
+  [string]$Connector,
+  [switch]$Yes,
   [switch]$Help
 )
 
@@ -17,6 +24,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoZip    = "https://github.com/techreloaded-ar/ARchetipo/archive/refs/heads/main.zip"
 $SkillNames = @("archetipo-autopilot", "archetipo-design", "archetipo-implement", "archetipo-inception", "archetipo-plan", "archetipo-spec")
+$ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # ─── Tool definitions ─────────────────────────────────────────────────────────
 $Tools = @(
@@ -25,7 +33,30 @@ $Tools = @(
   @{ Name = "Gemini CLI";      Path = ".gemini\skills" }
   @{ Name = "OpenCode";        Path = ".opencode\skills" }
   @{ Name = "GitHub Copilot";  Path = ".github\skills" }
+  @{ Name = "Pi";              Path = ".pi\skills" }
 )
+
+function Resolve-ToolIndex {
+  param([string]$Raw)
+
+  $normalized = if ($null -eq $Raw) { "" } else { $Raw.ToLowerInvariant().Replace(" ", "-") }
+  switch ($normalized) {
+    "claude" { return 0 }
+    "claude-code" { return 0 }
+    "codex" { return 1 }
+    "gemini" { return 2 }
+    "gemini-cli" { return 2 }
+    "opencode" { return 3 }
+    "open-code" { return 3 }
+    "copilot" { return 4 }
+    "github-copilot" { return 4 }
+    "github" { return 4 }
+    "pi" { return 5 }
+    default {
+      throw "Unsupported tool '$Raw'."
+    }
+  }
+}
 
 # ─── Install for a specific tool ──────────────────────────────────────────────
 function Install-ForTool {
@@ -186,7 +217,7 @@ function Show-FallbackMenu {
 
 # ─── Connector selection (radio-button, single choice) ─────────────────────────
 $ConnectorOptions      = @("file", "github")
-$ConnectorDescriptions = @("backlog e planning come file Markdown locali", "backlog e planning su GitHub Projects v2 — richiede GitHub CLI")
+$ConnectorDescriptions = @("backlog e planning come file Markdown locali", "backlog e planning su GitHub Projects v2 - richiede GitHub CLI")
 
 function Show-ConnectorMenu {
   $cursor = 0
@@ -272,7 +303,7 @@ function Show-FallbackConnector {
 
 # ─── Install config ──────────────────────────────────────────────────────────
 function Install-Config {
-  param([string]$SourceDir, [string]$Connector)
+  param([string]$SourceDir, [string]$Connector, [bool]$AssumeYes = $false)
 
   $configDir  = ".archetipo"
   $configFile = Join-Path $configDir "config.yaml"
@@ -288,13 +319,15 @@ function Install-Config {
 
   # Check if config already exists
   if (Test-Path $configFile) {
-    Write-Host ""
-    Write-Host "  ! " -ForegroundColor Yellow -NoNewline
-    Write-Host ".archetipo\config.yaml esiste gia. Sovrascrivere? [s/N] " -NoNewline
-    $answer = Read-Host
-    if ($answer -ne "s" -and $answer -ne "S" -and $answer -ne "y" -and $answer -ne "Y") {
-      Write-Host "  Config non modificato" -ForegroundColor DarkGray
-      return
+    if (-not $AssumeYes) {
+      Write-Host ""
+      Write-Host "  ! " -ForegroundColor Yellow -NoNewline
+      Write-Host ".archetipo\config.yaml esiste gia. Sovrascrivere? [s/N] " -NoNewline
+      $answer = Read-Host
+      if ($answer -ne "s" -and $answer -ne "S" -and $answer -ne "y" -and $answer -ne "Y") {
+        Write-Host "  Config non modificato" -ForegroundColor DarkGray
+        return
+      }
     }
   }
 
@@ -419,11 +452,14 @@ ARchetipo Installer
 
 Usage:
   irm https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.ps1 | iex
-  .\install.ps1 [-Local] [-Cleanup] [-Help]
+  .\install.ps1 [-Local] [-Cleanup] [-Tool codex] [-Connector file] [-Yes] [-Help]
 
 Flags:
   -Local    Install from local .\skills\ folder instead of downloading from GitHub
   -Cleanup  Remove installed skills from selected tools
+  -Tool     Install or cleanup a single tool non-interactively (claude, codex, gemini, opencode, copilot, pi)
+  -Connector Select connector non-interactively (file or github)
+  -Yes      Overwrite config.yaml without prompting
   -Help     Show this help message
 
 Skills installed:
@@ -438,7 +474,7 @@ Configuration:
   .archetipo\config.yaml is created with the selected connector (file or github).
 
 Supported tools:
-  Claude Code, Codex, Gemini CLI, OpenCode, GitHub Copilot
+  Claude Code, Codex, Gemini CLI, OpenCode, GitHub Copilot, Pi
 "@
     return
   }
@@ -451,9 +487,18 @@ Supported tools:
     Write-Host ""
 
     # Tool selection
-    Write-Host "  Select tools to clean up:" -ForegroundColor White
-    Write-Host ""
-    $selectedTools = Show-Menu
+    if ($Tool) {
+      try {
+        $selectedTools = @(Resolve-ToolIndex -Raw $Tool)
+      } catch {
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+      }
+    } else {
+      Write-Host "  Select tools to clean up:" -ForegroundColor White
+      Write-Host ""
+      $selectedTools = Show-Menu
+    }
 
     if ($null -eq $selectedTools -or $selectedTools.Count -eq 0) {
       Write-Host "  No tools selected. Exiting." -ForegroundColor Yellow
@@ -482,12 +527,13 @@ Supported tools:
   $tempDir   = $null
 
   if ($Local) {
-    # Use local .\skills\ folder
-    if (-not (Test-Path ".\skills")) {
-      Write-Host "  Error: .\skills\ folder not found. Run from the repository root." -ForegroundColor Red
+    # Use the local repository folder relative to this installer.
+    $localSkillsDir = Join-Path $ScriptDir "skills"
+    if (-not (Test-Path $localSkillsDir)) {
+      Write-Host "  Error: $localSkillsDir folder not found." -ForegroundColor Red
       return
     }
-    $sourceDir = ".\skills"
+    $sourceDir = $localSkillsDir
     Write-Host "  Using local skills folder..." -ForegroundColor DarkGray
   } else {
     # Create temp directory
@@ -516,9 +562,18 @@ Supported tools:
   Write-Host ""
 
   # Tool selection
-  Write-Host "  Select tools to install for:" -ForegroundColor White
-  Write-Host ""
-  $selectedTools = Show-Menu
+  if ($Tool) {
+    try {
+      $selectedTools = @(Resolve-ToolIndex -Raw $Tool)
+    } catch {
+      Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+      exit 1
+    }
+  } else {
+    Write-Host "  Select tools to install for:" -ForegroundColor White
+    Write-Host ""
+    $selectedTools = Show-Menu
+  }
 
   if ($null -eq $selectedTools -or $selectedTools.Count -eq 0) {
     Write-Host "  No tools selected. Exiting." -ForegroundColor Yellow
@@ -529,9 +584,13 @@ Supported tools:
   }
 
   # Connector selection
-  Write-Host "  Select connector:" -ForegroundColor White
-  Write-Host ""
-  $selectedConnector = Show-ConnectorMenu
+  if ($Connector) {
+    $selectedConnector = $Connector
+  } else {
+    Write-Host "  Select connector:" -ForegroundColor White
+    Write-Host ""
+    $selectedConnector = Show-ConnectorMenu
+  }
 
   # Install
   Write-Host "  Installing..." -ForegroundColor White
@@ -541,7 +600,7 @@ Supported tools:
   }
 
   # Install config
-  Install-Config -SourceDir $sourceDir -Connector $selectedConnector
+  Install-Config -SourceDir $sourceDir -Connector $selectedConnector -AssumeYes $Yes
 
   # Install CLI binary
   $sourceRoot = Split-Path $sourceDir -Parent
