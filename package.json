@@ -4,7 +4,8 @@
     "build:cli": "cd cli && go run github.com/goreleaser/goreleaser/v2@v2.15.4 release --snapshot --clean",
     "release:cli": "cd cli && go run github.com/goreleaser/goreleaser/v2@v2.15.4 release --clean",
     "test:cli": "cd cli && go test ./...",
-    "test:e2e:file": "node ./test/e2e/run-spec-plan.mjs"
+    "test:e2e:file": "node ./test/e2e/run-spec-plan.mjs --connector file",
+    "test:e2e:github": "node ./test/e2e/run-spec-plan.mjs --connector github"
   },
   "dependencies": {
     "yaml": "^2.9.0"

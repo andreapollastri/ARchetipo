@@ -4,27 +4,28 @@ scenarios:
     prd_source: test/PRD.md
 
 backends:
-  - id: codex-cli
-    type: codex-cli
-    tool: codex
-    command: codex
-    model: gpt-5.5
-    scenarios:
-      - spec-plan-file
-
-  - id: claude-cli
-    type: claude-cli
-    tool: claude
-    command: claude
-    model: sonnet
-    scenarios:
-      - spec-plan-file
 
   - id: pi-cli
     type: pi-cli
     tool: pi
     command: pi
-    model: openai/gpt-5.5
+    model: opencode-go/deepseek-v4-flash
     thinking: medium
     scenarios:
       - spec-plan-file
+
+  # - id: codex-cli
+  #   type: codex-cli
+  #   tool: codex
+  #   command: codex
+  #   model: gpt-5.5
+  #   scenarios:
+  #     - spec-plan-file
+
+  # - id: claude-cli
+  #   type: claude-cli
+  #   tool: claude
+  #   command: claude
+  #   model: sonnet
+  #   scenarios:
+  #     - spec-plan-file

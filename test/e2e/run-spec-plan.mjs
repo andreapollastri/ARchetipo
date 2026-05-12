@@ -14,6 +14,8 @@ const repoRoot = path.resolve(__dirname, "..", "..");
 const DEFAULT_MANIFEST = path.join(repoRoot, "test", "matrix.yaml");
 const DEFAULT_SCENARIO = "spec-plan-file";
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_CONNECTOR = "file";
+const DEFAULT_GITHUB_REPO_PREFIX = "archetipo-e2e";
 
 const TOOL_SKILL_ROOT = {
   claude: ".claude/skills",
@@ -158,9 +160,10 @@ async function main() {
 
   const results = [];
   for (const backend of backends) {
-    console.log(`\n==> Running ${backend.id} (${backend.model})`);
+    console.log(`\n==> Running ${backend.id} (${backend.model}) [connector=${options.connector}]`);
     const result = await runBackendScenario({
       backend,
+      connector: options.connector,
       manifestPath,
       scenarioName: options.scenario,
       scenario,
@@ -180,6 +183,7 @@ async function main() {
 
 function parseArgs(argv) {
   const options = {
+    connector: DEFAULT_CONNECTOR,
     manifest: DEFAULT_MANIFEST,
     scenario: DEFAULT_SCENARIO,
   };
@@ -196,6 +200,9 @@ function parseArgs(argv) {
       case "--scenario":
         options.scenario = argv[++index];
         break;
+      case "--connector":
+        options.connector = argv[++index];
+        break;
       case "--timeout-ms":
         options.timeoutMs = Number(argv[++index]);
         break;
@@ -209,6 +216,10 @@ function parseArgs(argv) {
     }
   }
 
+  if (!["file", "github"].includes(options.connector)) {
+    throw new Error(`Unknown connector: ${options.connector}`);
+  }
+
   return options;
 }
 
@@ -217,6 +228,8 @@ function printHelp() {
 
 Usage:
   npm run test:e2e:file -- [--manifest test/matrix.yaml] [--backend codex-cli] [--scenario spec-plan-file]
+  npm run test:e2e:github -- [--manifest test/matrix.yaml] [--backend codex-cli] [--scenario spec-plan-file]
+  node ./test/e2e/run-spec-plan.mjs --connector github [--backend codex-cli]
 `);
 }
 
@@ -239,11 +252,12 @@ function selectBackends(backends, requestedBackend, scenarioName) {
   });
 }
 
-async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }) {
+async function runBackendScenario({ backend, connector, scenarioName, scenario, timeoutMs }) {
   const adapter = adapters[backend.type];
   if (!adapter) {
     return {
       backend: backend.id,
+      connector,
       model: backend.model,
       status: "skip",
       reason: `Unsupported backend type '${backend.type}'`,
@@ -255,13 +269,14 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
   if (!toolSkillRoot) {
     return {
       backend: backend.id,
+      connector,
       model: backend.model,
       status: "skip",
       reason: `Unsupported installer tool '${toolKey}'`,
     };
   }
 
-  const workspaceRoot = path.join(repoRoot, "test", "workspaces", scenarioName, backend.id);
+  const workspaceRoot = path.join(repoRoot, "test", "workspaces", scenarioName, connector, backend.id);
   const sandboxDir = path.join(workspaceRoot, "sandbox");
   const artifactsDir = path.join(workspaceRoot, "artifacts");
 
@@ -274,6 +289,7 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
 
   const context = {
     backend,
+    connector,
     scenarioName,
     sandboxDir,
     artifactsDir,
@@ -297,6 +313,7 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
     }
 
     await verifyRequiredEnv(backend);
+    await prepareWorkspace(context);
     await installWorkspace(context);
     await verifyInstallation(context);
 
@@ -342,6 +359,7 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
     const storyAfterPlan = await readCliEnvelope(context, "planned-story", ["story", "show", firstTodo.code]);
 
     const verification = await verifyFinalState({
+      connector: context.connector,
       sandboxDir,
       init: init.data,
       backlog: afterPlan.data,
@@ -355,6 +373,8 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
       JSON.stringify(
         {
           backend: backend.id,
+          connector: context.connector,
+          githubRepo: context.githubRepo,
           model: backend.model,
           status: "pass",
           story: firstTodo.code,
@@ -378,6 +398,8 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
         JSON.stringify(
           {
             backend: backend.id,
+            connector: context.connector,
+            githubRepo: context.githubRepo,
             model: backend.model,
             status: "skip",
             reason: error.message,
@@ -395,6 +417,8 @@ async function runBackendScenario({ backend, scenarioName, scenario, timeoutMs }
       JSON.stringify(
         {
           backend: backend.id,
+          connector: context.connector,
+          githubRepo: context.githubRepo,
           model: backend.model,
           status: "fail",
           reason: error.message,
@@ -421,6 +445,16 @@ async function verifyRequiredEnv(backend) {
   }
 }
 
+async function prepareWorkspace(context) {
+  if (context.connector !== "github") {
+    return;
+  }
+
+  await verifyGitHubPrerequisites(context);
+  await provisionGitHubRepository(context);
+  await bootstrapSandboxGit(context);
+}
+
 async function installWorkspace(context) {
   const installScript = path.join(repoRoot, "install.sh");
   const install = await runLoggedCommand({
@@ -433,7 +467,7 @@ async function installWorkspace(context) {
       "--tool",
       context.backend.tool,
       "--connector",
-      "file",
+      context.connector,
       "--yes",
     ],
   });
@@ -459,8 +493,9 @@ async function verifyInstallation(context) {
   }
 
   const configText = await fs.readFile(path.join(context.sandboxDir, ".archetipo", "config.yaml"), "utf8");
-  if (!/^connector:\s*file\b/m.test(configText)) {
-    throw new Error("Installed config.yaml does not use connector: file.");
+  const connectorPattern = new RegExp(`^connector:\\s*${context.connector}\\b`, "m");
+  if (!connectorPattern.test(configText)) {
+    throw new Error(`Installed config.yaml does not use connector: ${context.connector}.`);
   }
 }
 
@@ -509,7 +544,7 @@ async function readOptionalBacklog(context) {
   throw new Error(`CLI command failed (backlog show): ${result.stderr || result.stdout}`);
 }
 
-async function verifyFinalState({ sandboxDir, init, backlog, selectedStoryCode, plannedStory, tasks }) {
+async function verifyFinalState({ connector, sandboxDir, init, backlog, selectedStoryCode, plannedStory, tasks }) {
   const items = backlog?.items ?? [];
   if (items.length === 0) {
     throw new Error("Backlog is empty after planning.");
@@ -544,9 +579,6 @@ async function verifyFinalState({ sandboxDir, init, backlog, selectedStoryCode, 
     throw new Error(`Story show returned status ${plannedStory.status} for ${selectedStoryCode}.`);
   }
 
-  const planningPath = resolveProjectPath(sandboxDir, init?.paths?.planning ?? ".archetipo/plans");
-  const planFile = path.join(planningPath, `${selectedStoryCode}-plan.yaml`);
-  await fs.access(planFile);
   if (!Array.isArray(tasks) || tasks.length === 0) {
     throw new Error(`Plan for ${selectedStoryCode} was saved without tasks.`);
   }
@@ -558,11 +590,18 @@ async function verifyFinalState({ sandboxDir, init, backlog, selectedStoryCode, 
         .join(", ")}`,
     );
   }
-  return {
+  const verification = {
+    connector,
     selectedStoryCode,
-    planFile,
     taskCount: tasks.length,
   };
+  if (connector === "file") {
+    const planningPath = resolveProjectPath(sandboxDir, init?.paths?.planning ?? ".archetipo/plans");
+    const planFile = path.join(planningPath, `${selectedStoryCode}-plan.yaml`);
+    await fs.access(planFile);
+    verification.planFile = planFile;
+  }
+  return verification;
 }
 
 function resolveProjectPath(projectRoot, maybeRelative) {
@@ -631,6 +670,155 @@ async function ensureCommand(command) {
     return { skip: true, reason: `Command '${command}' is not available.` };
   }
   return { skip: false };
+}
+
+async function verifyGitHubPrerequisites(context) {
+  const ghCommand = await ensureCommand("gh");
+  if (ghCommand.skip) {
+    throw new SkipError("GitHub connector requires the 'gh' CLI to be installed.");
+  }
+
+  const gitCommand = await ensureCommand("git");
+  if (gitCommand.skip) {
+    throw new SkipError("GitHub connector requires the 'git' CLI to be installed.");
+  }
+
+  const authStatus = await runProbe("gh", ["auth", "status"]);
+  if (!authStatus.ok) {
+    throw new SkipError("GitHub connector requires an authenticated 'gh' session.");
+  }
+}
+
+async function provisionGitHubRepository(context) {
+  const owner = await getGitHubViewerLogin();
+  if (!owner) {
+    throw new SkipError("GitHub connector requires a resolvable GitHub owner for the test repository.");
+  }
+
+  const repoName = buildDefaultGitHubRepoName(context);
+  const repoSlug = `${owner}/${repoName}`;
+  const repoUrl = `https://github.com/${repoSlug}.git`;
+  const projectTitle = `${repoName} Backlog`;
+
+  const existingRepo = await runProbe("gh", ["repo", "view", repoSlug, "--json", "nameWithOwner"]);
+  if (existingRepo.ok) {
+    const deleteRepo = await runProbe("gh", ["repo", "delete", repoSlug, "--yes"]);
+    if (!deleteRepo.ok) {
+      throw new Error(`Failed to delete existing GitHub repo ${repoSlug}: ${deleteRepo.stderr || deleteRepo.stdout || `exit ${deleteRepo.code}`}`);
+    }
+  }
+
+  await deleteProjectByTitle(owner, projectTitle);
+
+  const createRepo = await runProbe("gh", [
+    "repo",
+    "create",
+    repoSlug,
+    "--private",
+    "--disable-wiki",
+    "--description",
+    `ARchetipo E2E sandbox for ${context.scenarioName}/${context.backend.id}`,
+  ]);
+  if (!createRepo.ok) {
+    throw new Error(`Failed to create GitHub repo ${repoSlug}: ${createRepo.stderr || createRepo.stdout || `exit ${createRepo.code}`}`);
+  }
+
+  context.githubRepo = {
+    owner,
+    projectTitle,
+    repoName,
+    repoSlug,
+    repoUrl,
+  };
+}
+
+async function bootstrapSandboxGit(context) {
+  const remoteUrl = context.githubRepo?.repoUrl;
+  if (!remoteUrl) {
+    throw new Error("GitHub sandbox bootstrap is missing the provisioned remote repository URL.");
+  }
+
+  const gitInit = await runLoggedCommand({
+    ...context,
+    step: "git-init",
+    command: "git",
+    args: ["init", "-b", "main"],
+  });
+  if (!gitInit.ok) {
+    throw new Error(`Sandbox git init failed: ${gitInit.stderr || gitInit.stdout || `exit ${gitInit.code}`}`);
+  }
+
+  const gitRemote = await runLoggedCommand({
+    ...context,
+    step: "git-remote",
+    command: "git",
+    args: ["remote", "add", "origin", remoteUrl],
+  });
+  if (!gitRemote.ok) {
+    throw new Error(`Sandbox git remote setup failed: ${gitRemote.stderr || gitRemote.stdout || `exit ${gitRemote.code}`}`);
+  }
+}
+
+async function getGitHubViewerLogin() {
+  const viewer = await runProbe("gh", ["api", "user"]);
+  if (!viewer.ok) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(viewer.stdout);
+    return parsed.login ?? "";
+  } catch {
+    return "";
+  }
+}
+
+async function deleteProjectByTitle(owner, projectTitle) {
+  const list = await runProbe("gh", [
+    "project",
+    "list",
+    "--owner",
+    owner,
+    "--format",
+    "json",
+    "--limit",
+    "100",
+  ]);
+  if (!list.ok) {
+    throw new Error(`Failed to list GitHub projects for ${owner}: ${list.stderr || list.stdout || `exit ${list.code}`}`);
+  }
+
+  let projects = [];
+  try {
+    projects = JSON.parse(list.stdout).projects ?? [];
+  } catch (error) {
+    throw new Error(`Failed to parse GitHub project list JSON: ${error.message}`);
+  }
+
+  for (const project of projects) {
+    if (project.title !== projectTitle) {
+      continue;
+    }
+    const remove = await runProbe("gh", ["project", "delete", String(project.number), "--owner", owner]);
+    if (!remove.ok) {
+      throw new Error(`Failed to delete existing GitHub project '${projectTitle}': ${remove.stderr || remove.stdout || `exit ${remove.code}`}`);
+    }
+  }
+}
+
+function buildDefaultGitHubRepoName(context) {
+  return sanitizeGitHubName([
+    DEFAULT_GITHUB_REPO_PREFIX,
+    context.scenarioName,
+    context.backend.id,
+  ].join("-"));
+}
+
+function sanitizeGitHubName(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 async function runProbe(command, args) {
@@ -703,6 +891,8 @@ function finalizeResult(context, result) {
   if (result instanceof SkipError) {
     return {
       backend: context.backend.id,
+      connector: context.connector,
+      githubRepo: context.githubRepo,
       model: context.backend.model,
       status: "skip",
       reason: result.message,
@@ -712,6 +902,8 @@ function finalizeResult(context, result) {
 
   return {
     backend: context.backend.id,
+    connector: context.connector,
+    githubRepo: context.githubRepo,
     model: context.backend.model,
     status: result.status,
     reason: result.reason,
@@ -721,7 +913,8 @@ function finalizeResult(context, result) {
 }
 
 async function writeSummary(results, scenarioName) {
-  const summaryPath = path.join(repoRoot, "test", "workspaces", scenarioName, "summary.json");
+  const connector = results[0]?.connector ?? DEFAULT_CONNECTOR;
+  const summaryPath = path.join(repoRoot, "test", "workspaces", scenarioName, connector, "summary.json");
   await fs.mkdir(path.dirname(summaryPath), { recursive: true });
   await fs.writeFile(summaryPath, JSON.stringify(results, null, 2));
 }
@@ -734,7 +927,7 @@ function printSummary(results) {
 }
 
 function formatResultLine(result) {
-  const base = `${result.backend} [${result.model}] -> ${result.status.toUpperCase()}`;
+  const base = `${result.backend} [${result.model}] [connector=${result.connector ?? DEFAULT_CONNECTOR}] -> ${result.status.toUpperCase()}`;
   if (result.story) {
     return `${base} (${result.story})`;
   }

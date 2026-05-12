@@ -212,7 +212,7 @@ func upsertGitHubSection(doc *yaml.Node, g GitHubConfig) error {
 	if root.Kind != yaml.MappingNode {
 		return fmt.Errorf("config root is not a mapping")
 	}
-	gh := findChildMapping(root, "github")
+	gh := findOrCreateChildMapping(root, "github")
 	if gh == nil {
 		key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "github"}
 		gh = &yaml.Node{Kind: yaml.MappingNode}
@@ -223,13 +223,23 @@ func upsertGitHubSection(doc *yaml.Node, g GitHubConfig) error {
 	return nil
 }
 
-// findChildMapping returns the value node for a given mapping key, or nil
-// when the key is absent or its value is not a mapping.
-func findChildMapping(m *yaml.Node, key string) *yaml.Node {
+// findOrCreateChildMapping returns the value node for a given mapping key.
+// If the key already exists but has an empty/null/scalar value (for example
+// `github:` in the shipped template), the existing node is converted in place
+// to a mapping so Save() patches it instead of appending a duplicate key.
+func findOrCreateChildMapping(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
-		if m.Content[i].Value == key && m.Content[i+1].Kind == yaml.MappingNode {
-			return m.Content[i+1]
+		if m.Content[i].Value != key {
+			continue
 		}
+		if m.Content[i+1].Kind != yaml.MappingNode {
+			m.Content[i+1].Kind = yaml.MappingNode
+			m.Content[i+1].Tag = "!!map"
+			m.Content[i+1].Value = ""
+			m.Content[i+1].Content = nil
+			m.Content[i+1].Style = 0
+		}
+		return m.Content[i+1]
 	}
 	return nil
 }

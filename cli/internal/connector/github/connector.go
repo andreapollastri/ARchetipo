@@ -137,7 +137,27 @@ func (c *Connector) ReadStoryDetail(ctx context.Context, ref string) (domain.Sto
 	if err != nil {
 		return domain.Story{}, err
 	}
-	return c.viewIssueAsStory(ctx, num)
+	story, err := c.viewIssueAsStory(ctx, num)
+	if err != nil {
+		return domain.Story{}, err
+	}
+	// Enrich with project board data (status, priority, story points, epic).
+	items, err := c.listProjectItems(ctx)
+	if err != nil {
+		return domain.Story{}, err
+	}
+	for _, item := range items {
+		if item.Ref == story.Ref {
+			story.Status = item.Status
+			story.Priority = item.Priority
+			story.StoryPoints = item.StoryPoints
+			if story.Epic.Code == "" {
+				story.Epic = item.Epic
+			}
+			break
+		}
+	}
+	return story, nil
 }
 
 func (c *Connector) ReadStoryTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {

@@ -156,6 +156,39 @@ paths:
 	}
 }
 
+func TestSave_ReusesEmptyGitHubSectionFromTemplate(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	initial := `connector: github
+paths:
+  prd: docs/PRD.md
+#only valid for github connector
+github:
+
+# owner: auto-detected from repo
+# project_number: auto-detected from repo
+`
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(initial), 0o644))
+
+	c, err := Load(root)
+	must(t, err)
+	c.GitHub.Owner = "sleli"
+	c.GitHub.ProjectNumber = 23
+	must(t, c.Save())
+
+	raw, err := os.ReadFile(filepath.Join(root, RelativePath))
+	must(t, err)
+	s := string(raw)
+	if strings.Count(s, "\ngithub:") != 1 {
+		t.Fatalf("expected a single github section, got:\n%s", s)
+	}
+	for _, want := range []string{"owner: sleli", "project_number: 23"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in saved file:\n%s", want, s)
+		}
+	}
+}
+
 func TestSave_NoOpWhenProjectRootEmpty(t *testing.T) {
 	c := Default()
 	c.GitHub.Owner = "x"
