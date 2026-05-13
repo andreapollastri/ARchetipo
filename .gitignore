@@ -23,3 +23,5 @@ evals.json
 *.stackdump
 test/workspaces/*
 node_modules/
+.pi-lens
+.pi
