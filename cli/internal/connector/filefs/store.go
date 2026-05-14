@@ -47,8 +47,18 @@ type ordersDoc struct {
 }
 
 type storyDoc struct {
-	Schema       string `yaml:"schema"`
-	domain.Story `yaml:",inline"`
+	Schema      string          `yaml:"schema"`
+	Code        string          `yaml:"code"`
+	Title       string          `yaml:"title"`
+	Epic        string          `yaml:"epic"`
+	Priority    domain.Priority `yaml:"priority"`
+	StoryPoints int             `yaml:"story_points"`
+	Status      domain.Status   `yaml:"status"`
+	BlockedBy   []string        `yaml:"blocked_by,omitempty"`
+	Scope       domain.Scope    `yaml:"scope,omitempty"`
+	Body        string          `yaml:"body,omitempty"`
+	Ref         string          `yaml:"ref,omitempty"`
+	URL         string          `yaml:"url,omitempty"`
 }
 
 type planDoc struct {
@@ -92,7 +102,7 @@ func (c *Connector) loadStore() (yamlStore, error) {
 	if err := yaml.Unmarshal(raw, &backlog); err != nil {
 		return yamlStore{}, iox.NewInvalidInput("invalid backlog YAML", "check .archetipo/backlog.yaml", err)
 	}
-	stories, err := c.readStoryDocs()
+	stories, err := c.readStoryDocs(backlog.Epics)
 	if err != nil {
 		return yamlStore{}, err
 	}
@@ -100,7 +110,7 @@ func (c *Connector) loadStore() (yamlStore, error) {
 	return yamlStore{Backlog: backlog, Stories: stories}, nil
 }
 
-func (c *Connector) readStoryDocs() (map[string]domain.Story, error) {
+func (c *Connector) readStoryDocs(epics []domain.Epic) (map[string]domain.Story, error) {
 	dir := c.storiesDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -108,6 +118,13 @@ func (c *Connector) readStoryDocs() (map[string]domain.Story, error) {
 			return map[string]domain.Story{}, nil
 		}
 		return nil, fmt.Errorf("reading stories dir: %w", err)
+	}
+	epicTitles := make(map[string]string, len(epics))
+	for _, epic := range epics {
+		if epic.Code == "" {
+			continue
+		}
+		epicTitles[epic.Code] = epic.Title
 	}
 	out := make(map[string]domain.Story, len(entries))
 	for _, entry := range entries {
@@ -123,9 +140,12 @@ func (c *Connector) readStoryDocs() (map[string]domain.Story, error) {
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
 			return nil, iox.NewInvalidInput(fmt.Sprintf("invalid story YAML at %s", path), "", err)
 		}
-		st := doc.Story
+		st := doc.toStory()
 		if st.Code == "" {
 			st.Code = strings.TrimSuffix(entry.Name(), ".yaml")
+		}
+		if st.Epic.Code != "" && st.Epic.Title == "" {
+			st.Epic.Title = epicTitles[st.Epic.Code]
 		}
 		if st.Ref == "" {
 			st.Ref = st.Code
@@ -248,7 +268,8 @@ func (c *Connector) writeStore(store yamlStore) error {
 		return err
 	}
 	for code, story := range store.Stories {
-		doc := storyDoc{Schema: storySchema, Story: story}
+		doc := storyDocFromStory(story)
+		doc.Schema = storySchema
 		doc.Ref = ""
 		doc.URL = ""
 		if err := writeYAML(c.storyPath(code), doc); err != nil {
@@ -256,6 +277,38 @@ func (c *Connector) writeStore(store yamlStore) error {
 		}
 	}
 	return nil
+}
+
+func storyDocFromStory(story domain.Story) storyDoc {
+	return storyDoc{
+		Code:        story.Code,
+		Title:       story.Title,
+		Epic:        story.Epic.Code,
+		Priority:    story.Priority,
+		StoryPoints: story.StoryPoints,
+		Status:      story.Status,
+		BlockedBy:   story.BlockedBy,
+		Scope:       story.Scope,
+		Body:        story.Body,
+		Ref:         story.Ref,
+		URL:         story.URL,
+	}
+}
+
+func (d storyDoc) toStory() domain.Story {
+	return domain.Story{
+		Code:        d.Code,
+		Title:       d.Title,
+		Epic:        domain.Epic{Code: d.Epic},
+		Priority:    d.Priority,
+		StoryPoints: d.StoryPoints,
+		Status:      d.Status,
+		BlockedBy:   d.BlockedBy,
+		Scope:       d.Scope,
+		Body:        d.Body,
+		Ref:         d.Ref,
+		URL:         d.URL,
+	}
 }
 
 func (c *Connector) writePlan(storyCode string, plan domain.PlanInput) error {

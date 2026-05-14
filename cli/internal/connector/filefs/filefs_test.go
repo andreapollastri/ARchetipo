@@ -1,11 +1,26 @@
 package filefs
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/config"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/domain"
 )
+
+func newTestConnector(t *testing.T) *Connector {
+	t.Helper()
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.ProjectRoot = dir
+	cfg.Paths.Backlog = filepath.Join(dir, ".archetipo", "backlog.yaml")
+	cfg.Paths.Planning = filepath.Join(dir, ".archetipo", "plans")
+	cfg.Paths.PRD = filepath.Join(dir, "PRD.md")
+	return New(cfg)
+}
 
 func TestStoryMarkerRoundTrip(t *testing.T) {
 	s := domain.Story{
@@ -149,5 +164,41 @@ func TestPlanRoundTrip(t *testing.T) {
 	again := renderPlan("US-001", domain.PlanInput{PlanBody: body, Tasks: parsedTasks})
 	if again != rendered {
 		t.Errorf("plan round-trip not byte-stable")
+	}
+}
+
+func TestStoryFilesStoreEpicAsCodeOnly(t *testing.T) {
+	c := newTestConnector(t)
+	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{
+		Code:        "US-001",
+		Title:       "Setup",
+		Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
+		Priority:    domain.PriorityHigh,
+		StoryPoints: 3,
+		Status:      domain.StatusTodo,
+		Body:        "## Story\n\nAs a user, I want X.",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(c.cfg.ProjectRoot, ".archetipo", "stories", "US-001.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "epic: EP-001\n") {
+		t.Fatalf("expected scalar epic code in story file, got:\n%s", text)
+	}
+	if strings.Contains(text, "title: Foundations") {
+		t.Fatalf("story file should not duplicate epic title, got:\n%s", text)
+	}
+
+	store, err := c.loadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Stories["US-001"].Epic.Title; got != "Foundations" {
+		t.Fatalf("expected epic title restored from backlog metadata, got %q", got)
 	}
 }
