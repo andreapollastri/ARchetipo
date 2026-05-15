@@ -17,7 +17,6 @@ const DEFAULT_CONNECTOR = "file";
 const DEFAULT_GITHUB_REPO_PREFIX = "archetipo-e2e";
 const LONG_RUNNING_STEP_HEARTBEAT_MS = 30 * 1000;
 const PROCESS_TERMINATION_GRACE_MS = 5 * 1000;
-const DEFAULT_AGENT_ID = "default-agent";
 const DEFAULT_SCENARIO_ID = "default";
 
 const TOOL_SKILL_ROOT = {
@@ -117,35 +116,7 @@ Usage:
 }
 
 function normalizeConfig(manifest, configPath, filterScenarios) {
-  // Support both old format (top-level 'run') and new format ('agents' + 'scenarios')
-  if (manifest?.run) {
-    // Old format: auto-convert to agents + scenarios
-    const run = manifest.run;
-    validateRunBlock(run, configPath);
-    const agentId = run.id || DEFAULT_AGENT_ID;
-    const agents = {
-      [agentId]: {
-        tool: run.tool,
-        command: run.command,
-        model: run.model,
-        args: run.args,
-        env_required: run.env_required,
-      },
-    };
-    const scenarios = [
-      {
-        id: DEFAULT_SCENARIO_ID,
-        agentId,
-        agent: { id: agentId, ...agents[agentId] },
-        prd: run.prd,
-        prompts: run.prompts,
-        env_required: run.env_required,
-      },
-    ];
-    return filterScenarioList(scenarios, filterScenarios, configPath);
-  }
-
-  // New format
+  // Agents + Scenarios format
   const agents = manifest?.agents;
   const rawScenarios = manifest?.scenarios;
 
@@ -202,23 +173,6 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
   }
 
   return filterScenarioList(scenarios, filterScenarios, configPath);
-}
-
-function validateRunBlock(run, configPath) {
-  for (const key of ["tool", "command"]) {
-    if (!run[key] || typeof run[key] !== "string") {
-      throw new Error(`run.${key} must be a non-empty string in ${configPath}`);
-    }
-  }
-  if (!Array.isArray(run.args) || run.args.length === 0 || !run.args.every((arg) => typeof arg === "string")) {
-    throw new Error(`run.args must be a non-empty list of strings in ${configPath}`);
-  }
-  if (!Array.isArray(run.prompts) || run.prompts.length === 0 || !run.prompts.every((prompt) => typeof prompt === "string")) {
-    throw new Error(`run.prompts must be a non-empty list of strings in ${configPath}`);
-  }
-  if (run.prd !== undefined && (typeof run.prd !== "string" || run.prd.trim() === "")) {
-    throw new Error(`run.prd must be a non-empty string when specified in ${configPath}`);
-  }
 }
 
 function filterScenarioList(scenarios, filter, configPath) {
