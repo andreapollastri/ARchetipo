@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ARchetipo &middot; Backlog Viewer</title>
+    <link rel="stylesheet" href="/vendor/easymde.min.css" />
     <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
@@ -31,7 +32,15 @@
                 <button type="button" class="tab" data-tab="plan" role="tab" aria-selected="false">Plan</button>
             </nav>
             <section class="tab-panel active" data-panel="story">
-                <form id="story-form" class="form-grid">
+                <div id="story-view" class="story-view">
+                    <div class="story-view-meta" id="story-view-meta"></div>
+                    <h3 class="story-view-title" id="story-view-title"></h3>
+                    <div class="markdown-rendered" id="story-body-view"></div>
+                    <div class="form-actions">
+                        <button type="button" id="story-edit-btn" class="primary-btn">Edit</button>
+                    </div>
+                </div>
+                <form id="story-form" class="form-grid hidden">
                     <label class="field full">
                         <span>Title</span>
                         <input type="text" name="title" required />
@@ -60,12 +69,9 @@
                         <span>Body (markdown)</span>
                         <textarea name="body" rows="14" spellcheck="false"></textarea>
                     </label>
-                    <div class="field full preview-toggle">
-                        <button type="button" id="story-preview-btn" class="ghost-btn">Toggle preview</button>
-                    </div>
-                    <div class="field full markdown-preview hidden" id="story-preview"></div>
                     <div class="form-actions full">
                         <button type="submit" class="primary-btn">Save story</button>
+                        <button type="button" id="story-cancel-btn" class="ghost-btn">Cancel</button>
                         <span class="status-msg" id="story-status"></span>
                     </div>
                 </form>
@@ -76,10 +82,6 @@
                         <span>Plan body (markdown)</span>
                         <textarea name="plan_body" rows="10" spellcheck="false"></textarea>
                     </label>
-                    <div class="field full preview-toggle">
-                        <button type="button" id="plan-preview-btn" class="ghost-btn">Toggle preview</button>
-                    </div>
-                    <div class="field full markdown-preview hidden" id="plan-preview"></div>
                     <div class="field full">
                         <div class="tasks-header">
                             <span>Tasks</span>
@@ -112,6 +114,7 @@
 
     <script src="/vendor/sortable.min.js"></script>
     <script src="/vendor/marked.min.js"></script>
+    <script src="/vendor/easymde.min.js"></script>
     <script src="/app.js"></script>
 </body>
 </html>

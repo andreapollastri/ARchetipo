@@ -12,15 +12,44 @@
     const planForm = document.getElementById('plan-form');
     const storyStatus = document.getElementById('story-status');
     const planStatus = document.getElementById('plan-status');
-    const storyPreview = document.getElementById('story-preview');
-    const planPreview = document.getElementById('plan-preview');
-    const storyPreviewBtn = document.getElementById('story-preview-btn');
-    const planPreviewBtn = document.getElementById('plan-preview-btn');
+    const storyView = document.getElementById('story-view');
+    const storyViewMeta = document.getElementById('story-view-meta');
+    const storyViewTitle = document.getElementById('story-view-title');
+    const storyBodyView = document.getElementById('story-body-view');
+    const storyEditBtn = document.getElementById('story-edit-btn');
+    const storyCancelBtn = document.getElementById('story-cancel-btn');
     const tasksTbody = document.getElementById('tasks-tbody');
     const addTaskBtn = document.getElementById('add-task-btn');
     const toast = document.getElementById('toast');
 
+    const editorToolbar = [
+        'bold', 'italic', 'heading', '|',
+        'unordered-list', 'ordered-list', 'quote', 'code', '|',
+        'link', 'image', '|',
+        'preview', 'side-by-side', 'fullscreen', '|',
+        'guide',
+    ];
+    const storyEditor = new EasyMDE({
+        element: storyForm.body,
+        spellChecker: false,
+        status: false,
+        autoDownloadFontAwesome: true,
+        previewRender: (plainText) => marked.parse(plainText),
+        toolbar: editorToolbar,
+        minHeight: '320px',
+    });
+    const planEditor = new EasyMDE({
+        element: planForm.plan_body,
+        spellChecker: false,
+        status: false,
+        autoDownloadFontAwesome: true,
+        previewRender: (plainText) => marked.parse(plainText),
+        toolbar: editorToolbar,
+        minHeight: '240px',
+    });
+
     let currentStoryCode = null;
+    let currentStorySnapshot = null; // last loaded story (for cancel + re-render after save)
     let boardSnapshot = null; // last loaded board (for undo on failed drag)
 
     refreshBtn.addEventListener('click', loadBoard);
@@ -34,8 +63,8 @@
     tabs.forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.tab)));
     storyForm.addEventListener('submit', onSaveStory);
     planForm.addEventListener('submit', onSavePlan);
-    storyPreviewBtn.addEventListener('click', () => togglePreview(storyForm.body, storyPreview));
-    planPreviewBtn.addEventListener('click', () => togglePreview(planForm.plan_body, planPreview));
+    storyEditBtn.addEventListener('click', () => enterStoryEditMode());
+    storyCancelBtn.addEventListener('click', () => exitStoryEditMode());
     addTaskBtn.addEventListener('click', () => addTaskRow());
 
     loadBoard();
@@ -150,9 +179,12 @@
         activateTab('story');
         storyStatus.textContent = 'Loading...';
         planStatus.textContent = '';
+        showStoryView();
         try {
             const detail = await apiGet(`/api/story/${encodeURIComponent(code)}`);
-            fillStoryForm(detail.story);
+            currentStorySnapshot = detail.story || {};
+            fillStoryView(currentStorySnapshot);
+            fillStoryForm(currentStorySnapshot);
             fillPlanForm(detail.plan_body || '', detail.tasks || []);
             storyStatus.textContent = '';
         } catch (err) {
@@ -161,23 +193,49 @@
         }
     }
 
+    function fillStoryView(s) {
+        storyViewTitle.textContent = s.title || '(untitled)';
+        const metaParts = [];
+        if (s.priority) metaParts.push(`<span class="priority-badge priority-${escapeHtml(s.priority)}">${escapeHtml(s.priority)}</span>`);
+        if (Number.isFinite(s.story_points) && s.story_points > 0) metaParts.push(`<span class="meta-chip">${s.story_points} pt</span>`);
+        if (s.scope) metaParts.push(`<span class="meta-chip">${escapeHtml(s.scope)}</span>`);
+        if (s.blocked_by && s.blocked_by.length) metaParts.push(`<span class="meta-chip blocked">blocked by ${escapeHtml(s.blocked_by.join(', '))}</span>`);
+        storyViewMeta.innerHTML = metaParts.join('');
+        storyBodyView.innerHTML = marked.parse(s.body || '*(no description)*');
+    }
+
     function fillStoryForm(s) {
         storyForm.title.value = s.title || '';
         storyForm.priority.value = s.priority || 'MEDIUM';
         storyForm.story_points.value = s.story_points || 0;
         storyForm.scope.value = s.scope || '';
         storyForm.blocked_by.value = (s.blocked_by || []).join(', ');
-        storyForm.body.value = s.body || '';
-        storyPreview.classList.add('hidden');
-        storyPreview.innerHTML = '';
+        storyEditor.value(s.body || '');
     }
 
     function fillPlanForm(body, tasks) {
-        planForm.plan_body.value = body || '';
+        planEditor.value(body || '');
         tasksTbody.innerHTML = '';
         (tasks || []).forEach((t) => addTaskRow(t));
-        planPreview.classList.add('hidden');
-        planPreview.innerHTML = '';
+    }
+
+    function showStoryView() {
+        storyView.classList.remove('hidden');
+        storyForm.classList.add('hidden');
+    }
+
+    function enterStoryEditMode() {
+        storyView.classList.add('hidden');
+        storyForm.classList.remove('hidden');
+        storyStatus.textContent = '';
+        storyStatus.className = 'status-msg';
+        // CodeMirror needs a refresh after being unhidden, otherwise it measures 0 height.
+        setTimeout(() => storyEditor.codemirror.refresh(), 0);
+    }
+
+    function exitStoryEditMode() {
+        if (currentStorySnapshot) fillStoryForm(currentStorySnapshot);
+        showStoryView();
     }
 
     function addTaskRow(task) {
@@ -231,7 +289,7 @@
             story_points: parseInt(storyForm.story_points.value, 10) || 0,
             scope: storyForm.scope.value,
             blocked_by: blocked,
-            body: storyForm.body.value,
+            body: storyEditor.value(),
         };
         storyStatus.textContent = 'Saving...';
         storyStatus.className = 'status-msg';
@@ -240,6 +298,9 @@
             storyStatus.textContent = 'Saved';
             storyStatus.className = 'status-msg ok';
             showToast(`${currentStoryCode} updated`, 'ok');
+            currentStorySnapshot = { ...(currentStorySnapshot || {}), ...patch };
+            fillStoryView(currentStorySnapshot);
+            showStoryView();
             await loadBoard();
         } catch (err) {
             storyStatus.textContent = `Save failed: ${err.message || err}`;
@@ -265,7 +326,7 @@
             })
             .filter((t) => t.id !== '');
         const payload = {
-            plan_body: planForm.plan_body.value,
+            plan_body: planEditor.value(),
             tasks,
         };
         planStatus.textContent = 'Saving...';
@@ -290,20 +351,17 @@
         panels.forEach((p) => {
             p.classList.toggle('active', p.dataset.panel === name);
         });
-    }
-
-    function togglePreview(textarea, previewEl) {
-        if (previewEl.classList.contains('hidden')) {
-            previewEl.innerHTML = marked.parse(textarea.value || '');
-            previewEl.classList.remove('hidden');
-        } else {
-            previewEl.classList.add('hidden');
+        // CodeMirror instances mounted inside hidden panels need a refresh once visible.
+        if (name === 'plan') setTimeout(() => planEditor.codemirror.refresh(), 0);
+        if (name === 'story' && !storyForm.classList.contains('hidden')) {
+            setTimeout(() => storyEditor.codemirror.refresh(), 0);
         }
     }
 
     function closeModal() {
         modal.classList.add('hidden');
         currentStoryCode = null;
+        currentStorySnapshot = null;
     }
 
     function showToast(msg, kind) {
