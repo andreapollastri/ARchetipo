@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/config"
@@ -32,6 +33,10 @@ func Register() {
 }
 
 var errBacklogMissing = errors.New("backlog missing")
+
+// mockupStoryCodeRE matches mockup folder names that map 1:1 to a story or
+// epic code so the viewer can render a per-story link.
+var mockupStoryCodeRE = regexp.MustCompile(`^(US|EP)-\d+$`)
 
 func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, error) {
 	return domain.SetupInfo{
@@ -153,6 +158,57 @@ func (c *Connector) SavePRD(ctx context.Context, content string) (domain.WriteRe
 		return domain.WriteResult{}, err
 	}
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Path: path}}}, nil
+}
+
+// ReadPRD returns the contents of the configured PRD file. A missing file is
+// not an error: callers (the viewer) should treat it as an empty PRD so the
+// edit flow can create it on first save.
+func (c *Connector) ReadPRD(ctx context.Context) (string, error) {
+	path := c.cfg.AbsPath(c.cfg.Paths.PRD)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", iox.NewInternal(fmt.Sprintf("reading %s", path), err)
+	}
+	return string(b), nil
+}
+
+// ListMockups enumerates subfolders of paths.mockups that contain an
+// index.html and returns them as MockupEntry records. A missing mockups
+// directory yields an empty slice (not an error). Folder names matching the
+// US-NNN or EP-NNN pattern are tagged with the corresponding StoryCode.
+func (c *Connector) ListMockups(ctx context.Context) ([]domain.MockupEntry, error) {
+	root := c.cfg.AbsPath(c.cfg.Paths.Mockups)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []domain.MockupEntry{}, nil
+		}
+		return nil, iox.NewInternal(fmt.Sprintf("reading %s", root), err)
+	}
+	out := []domain.MockupEntry{}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		indexPath := filepath.Join(root, e.Name(), "index.html")
+		if _, err := os.Stat(indexPath); err != nil {
+			continue
+		}
+		name := e.Name()
+		entry := domain.MockupEntry{
+			Name: name,
+			URL:  "/mockups/" + name + "/index.html",
+		}
+		if mockupStoryCodeRE.MatchString(name) {
+			entry.StoryCode = name
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }
 
 func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {

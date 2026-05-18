@@ -15,22 +15,31 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/config"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector"
 )
 
 // Server wires the connector backend to HTTP handlers and the embedded UI.
 type Server struct {
-	conn    connector.Connector
-	mux     *http.ServeMux
-	httpSrv *http.Server
+	conn       connector.Connector
+	cfg        config.Config
+	mux        *http.ServeMux
+	httpSrv    *http.Server
+	mockupsDir string
 }
 
 // NewServer constructs a Server bound to addr (e.g. "127.0.0.1:8080").
 // The returned server has all routes registered but is not listening yet:
-// call Run to start serving.
-func NewServer(conn connector.Connector, addr string) (*Server, error) {
+// call Run to start serving. cfg is used to resolve the on-disk location of
+// design mockups served under /mockups/.
+func NewServer(conn connector.Connector, cfg config.Config, addr string) (*Server, error) {
 	mux := http.NewServeMux()
-	s := &Server{conn: conn, mux: mux}
+	s := &Server{
+		conn:       conn,
+		cfg:        cfg,
+		mux:        mux,
+		mockupsDir: cfg.AbsPath(cfg.Paths.Mockups),
+	}
 	s.registerRoutes()
 	s.httpSrv = &http.Server{
 		Addr:              addr,
@@ -80,6 +89,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/story/{code}/plan", s.handleSavePlan)
 	s.mux.HandleFunc("POST /api/board/move", s.handleMoveCard)
 	s.mux.HandleFunc("POST /api/backlog/reorder", s.handleReorderBacklog)
+	s.mux.HandleFunc("GET /api/prd", s.handleGetPRD)
+	s.mux.HandleFunc("PUT /api/prd", s.handleSavePRD)
+	s.mux.HandleFunc("GET /api/mockups", s.handleListMockups)
+
+	// Serve design mockups from the configured paths.mockups directory.
+	// The handler is registered unconditionally; a missing directory just
+	// produces 404s, which the frontend already tolerates.
+	if s.mockupsDir != "" {
+		s.mux.Handle("/mockups/", http.StripPrefix("/mockups/", http.FileServer(http.Dir(s.mockupsDir))))
+	}
 
 	// Static assets (HTML/CSS/JS + vendor). Served from the embedded FS.
 	assets, err := fs.Sub(assetsFS, "assets")

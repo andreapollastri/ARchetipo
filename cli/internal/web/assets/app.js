@@ -26,6 +26,18 @@
     const tasksTbody = document.getElementById('tasks-tbody');
     const addTaskBtn = document.getElementById('add-task-btn');
     const toast = document.getElementById('toast');
+    const prdBtn = document.getElementById('prd-btn');
+    const prdModal = document.getElementById('prd-modal');
+    const prdModalClose = document.getElementById('prd-modal-close');
+    const prdView = document.getElementById('prd-view');
+    const prdBodyView = document.getElementById('prd-body-view');
+    const prdEditBtn = document.getElementById('prd-edit-btn');
+    const prdCancelBtn = document.getElementById('prd-cancel-btn');
+    const prdForm = document.getElementById('prd-form');
+    const prdStatus = document.getElementById('prd-status');
+    const mockupsBtn = document.getElementById('mockups-btn');
+    const mockupsMenu = document.getElementById('mockups-menu');
+    const mockupsDropdown = document.getElementById('mockups-dropdown');
 
     const editorToolbar = [
         'bold', 'italic', 'heading', '|',
@@ -52,11 +64,22 @@
         toolbar: editorToolbar,
         minHeight: '240px',
     });
+    const prdEditor = new EasyMDE({
+        element: prdForm.prd_body,
+        spellChecker: false,
+        status: false,
+        autoDownloadFontAwesome: true,
+        previewRender: (plainText) => marked.parse(plainText),
+        toolbar: editorToolbar,
+        minHeight: '360px',
+    });
 
     let currentStoryCode = null;
     let currentStorySnapshot = null; // last loaded story (for cancel + re-render after save)
     let currentPlanSnapshot = null; // last loaded plan (for cancel + re-render after save)
     let boardSnapshot = null; // last loaded board (for undo on failed drag)
+    let currentPrdSnapshot = ''; // last loaded PRD body
+    let mockupsCache = []; // cached list of mockups (refreshed lazily)
 
     refreshBtn.addEventListener('click', loadBoard);
     modalClose.addEventListener('click', closeModal);
@@ -75,7 +98,23 @@
     planCancelBtn.addEventListener('click', () => exitPlanEditMode());
     addTaskBtn.addEventListener('click', () => addTaskRow());
 
+    prdBtn.addEventListener('click', openPRD);
+    prdModalClose.addEventListener('click', closePRD);
+    prdModal.addEventListener('click', (e) => { if (e.target === prdModal) closePRD(); });
+    prdEditBtn.addEventListener('click', enterPrdEditMode);
+    prdCancelBtn.addEventListener('click', exitPrdEditMode);
+    prdForm.addEventListener('submit', onSavePRD);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !prdModal.classList.contains('hidden')) closePRD();
+    });
+
+    mockupsBtn.addEventListener('click', toggleMockupsMenu);
+    document.addEventListener('click', (e) => {
+        if (!mockupsDropdown.contains(e.target)) mockupsMenu.classList.add('hidden');
+    });
+
     loadBoard();
+    loadMockups();
 
     async function loadBoard() {
         boardEl.innerHTML = '<div class="empty-board">Loading...</div>';
@@ -211,8 +250,15 @@
         if (Number.isFinite(s.story_points) && s.story_points > 0) metaParts.push(`<span class="meta-chip">${s.story_points} pt</span>`);
         if (s.scope) metaParts.push(`<span class="meta-chip">${escapeHtml(s.scope)}</span>`);
         if (s.blocked_by && s.blocked_by.length) metaParts.push(`<span class="meta-chip blocked">blocked by ${escapeHtml(s.blocked_by.join(', '))}</span>`);
+        const mockup = findMockupForStory(s.code);
+        if (mockup) metaParts.push(`<a class="meta-chip mockup-link" href="${escapeHtml(mockup.url)}" target="_blank" rel="noopener">↗ mockup</a>`);
         storyViewMeta.innerHTML = metaParts.join('');
         storyBodyView.innerHTML = marked.parse(s.body || '*(no description)*');
+    }
+
+    function findMockupForStory(code) {
+        if (!code) return null;
+        return mockupsCache.find((m) => m.story_code === code) || null;
     }
 
     function fillStoryForm(s) {
@@ -459,6 +505,108 @@
             throw new Error(msg);
         }
         return data;
+    }
+
+    // ---- PRD & Mockups -----------------------------------------------------
+
+    async function openPRD() {
+        prdModal.classList.remove('hidden');
+        showPrdView();
+        prdStatus.textContent = 'Loading...';
+        prdStatus.className = 'status-msg';
+        try {
+            const data = await apiGet('/api/prd');
+            currentPrdSnapshot = (data && data.body) || '';
+            fillPrdView(currentPrdSnapshot);
+            prdEditor.value(currentPrdSnapshot);
+            prdStatus.textContent = '';
+        } catch (err) {
+            prdStatus.textContent = `Load failed: ${err.message || err}`;
+            prdStatus.className = 'status-msg err';
+        }
+    }
+
+    function closePRD() {
+        prdModal.classList.add('hidden');
+        showPrdView();
+    }
+
+    function fillPrdView(body) {
+        prdBodyView.innerHTML = marked.parse(body || '*(no PRD yet)*');
+    }
+
+    function showPrdView() {
+        prdView.classList.remove('hidden');
+        prdForm.classList.add('hidden');
+    }
+
+    function enterPrdEditMode() {
+        prdView.classList.add('hidden');
+        prdForm.classList.remove('hidden');
+        prdStatus.textContent = '';
+        prdStatus.className = 'status-msg';
+        setTimeout(() => prdEditor.codemirror.refresh(), 0);
+    }
+
+    function exitPrdEditMode() {
+        prdEditor.value(currentPrdSnapshot || '');
+        showPrdView();
+    }
+
+    async function onSavePRD(e) {
+        e.preventDefault();
+        const body = prdEditor.value();
+        prdStatus.textContent = 'Saving...';
+        prdStatus.className = 'status-msg';
+        try {
+            await apiPut('/api/prd', { body });
+            currentPrdSnapshot = body;
+            fillPrdView(body);
+            showPrdView();
+            prdStatus.textContent = 'Saved';
+            prdStatus.className = 'status-msg ok';
+            showToast('PRD updated', 'ok');
+        } catch (err) {
+            prdStatus.textContent = `Save failed: ${err.message || err}`;
+            prdStatus.className = 'status-msg err';
+        }
+    }
+
+    async function loadMockups() {
+        try {
+            const data = await apiGet('/api/mockups');
+            mockupsCache = (data && data.mockups) || [];
+            renderMockupsMenu();
+        } catch (_) {
+            mockupsCache = [];
+            renderMockupsMenu();
+        }
+    }
+
+    function renderMockupsMenu() {
+        const appMockups = mockupsCache.filter((m) => !m.story_code);
+        mockupsMenu.innerHTML = '';
+        if (appMockups.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'dropdown-empty';
+            empty.textContent = 'No app mockups';
+            mockupsMenu.appendChild(empty);
+            return;
+        }
+        appMockups.forEach((m) => {
+            const a = document.createElement('a');
+            a.href = m.url;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.className = 'dropdown-item';
+            a.textContent = m.name;
+            mockupsMenu.appendChild(a);
+        });
+    }
+
+    function toggleMockupsMenu(e) {
+        e.stopPropagation();
+        mockupsMenu.classList.toggle('hidden');
     }
 
     function escapeHtml(s) {

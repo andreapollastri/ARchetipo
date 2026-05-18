@@ -15,6 +15,11 @@
             <span class="brand-sub">backlog viewer</span>
         </div>
         <div class="topbar-actions">
+            <button id="prd-btn" type="button" class="ghost-btn">PRD</button>
+            <div class="dropdown" id="mockups-dropdown">
+                <button id="mockups-btn" type="button" class="ghost-btn" aria-haspopup="true" aria-expanded="false">Mockups</button>
+                <div class="dropdown-menu hidden" id="mockups-menu" role="menu"></div>
+            </div>
             <button id="refresh-btn" type="button" class="ghost-btn">Refresh</button>
         </div>
     </header>
@@ -126,6 +131,34 @@
                         <button type="submit" class="primary-btn">Save plan</button>
                         <button type="button" id="plan-cancel-btn" class="ghost-btn">Cancel</button>
                         <span class="status-msg" id="plan-status"></span>
+                    </div>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <div id="prd-modal" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="prd-editor-title">
+        <div class="modal">
+            <header class="modal-header">
+                <h2 id="prd-editor-title" class="modal-title">PRD</h2>
+                <button id="prd-modal-close" type="button" class="icon-btn" aria-label="Close">&times;</button>
+            </header>
+            <section class="tab-panel active">
+                <div id="prd-view" class="story-view">
+                    <div class="markdown-rendered" id="prd-body-view"></div>
+                    <div class="form-actions">
+                        <button type="button" id="prd-edit-btn" class="primary-btn">Edit</button>
+                    </div>
+                </div>
+                <form id="prd-form" class="form-grid hidden">
+                    <label class="field full">
+                        <span>PRD body (markdown)</span>
+                        <textarea name="prd_body" rows="18" spellcheck="false"></textarea>
+                    </label>
+                    <div class="form-actions full">
+                        <button type="submit" class="primary-btn">Save PRD</button>
+                        <button type="button" id="prd-cancel-btn" class="ghost-btn">Cancel</button>
+                        <span class="status-msg" id="prd-status"></span>
                     </div>
                 </form>
             </section>

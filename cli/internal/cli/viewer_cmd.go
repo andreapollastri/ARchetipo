@@ -46,7 +46,7 @@ loopback interface only; no authentication is performed.`,
 				return iox.NewInvalidInput("connector unavailable", "check `connector:` in .archetipo/config.yaml", err)
 			}
 			addr := net.JoinHostPort(host, strconv.Itoa(port))
-			srv, err := web.NewServer(conn, addr)
+			srv, err := web.NewServer(conn, cfg, addr)
 			if err != nil {
 				return iox.NewInternal("creating server", err)
 			}

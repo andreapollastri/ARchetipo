@@ -141,6 +141,70 @@ type planBodyReader interface {
 	ReadPlanBody(ctx context.Context, code string) (string, error)
 }
 
+// prdReader is an optional capability connectors can implement to expose the
+// raw PRD markdown so the viewer can render it next to stories and plans.
+type prdReader interface {
+	ReadPRD(ctx context.Context) (string, error)
+}
+
+// mockupLister is an optional capability connectors can implement to list the
+// design mockups produced by archetipo-design (HTML folders under paths.mockups).
+type mockupLister interface {
+	ListMockups(ctx context.Context) ([]domain.MockupEntry, error)
+}
+
+type prdView struct {
+	Body string `json:"body"`
+}
+
+func (s *Server) handleGetPRD(w http.ResponseWriter, r *http.Request) {
+	pr, ok := s.conn.(prdReader)
+	if !ok {
+		writeError(w, iox.NewConnector(iox.CodePreconditionMissing, "this connector does not expose a PRD", "use the file connector to read the PRD", nil))
+		return
+	}
+	body, err := pr.ReadPRD(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, prdView{Body: body})
+}
+
+func (s *Server) handleSavePRD(w http.ResponseWriter, r *http.Request) {
+	var req prdView
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.conn.SavePRD(r.Context(), req.Body); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, prdView{Body: req.Body})
+}
+
+type mockupsView struct {
+	Mockups []domain.MockupEntry `json:"mockups"`
+}
+
+func (s *Server) handleListMockups(w http.ResponseWriter, r *http.Request) {
+	ml, ok := s.conn.(mockupLister)
+	if !ok {
+		writeJSON(w, http.StatusOK, mockupsView{Mockups: []domain.MockupEntry{}})
+		return
+	}
+	list, err := ml.ListMockups(r.Context())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if list == nil {
+		list = []domain.MockupEntry{}
+	}
+	writeJSON(w, http.StatusOK, mockupsView{Mockups: list})
+}
+
 func (s *Server) handleUpdateStory(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
