@@ -408,6 +408,15 @@ func (c *Connector) ReorderBacklog(ctx context.Context, storyRef string, anchor 
 	)
 }
 
+func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+	return domain.WriteResult{}, iox.NewConnector(
+		iox.CodeConnectorBackend,
+		"story metadata update is not supported by the github connector yet",
+		"edit the issue directly on GitHub for now",
+		nil,
+	)
+}
+
 func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	statusByColumn := map[string]domain.Status{
 		"todo":        domain.StatusTodo,

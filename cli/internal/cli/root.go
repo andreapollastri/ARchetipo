@@ -60,6 +60,7 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newBoardCmd(s),
 		newStoryCmd(s),
 		newTaskCmd(s),
+		newViewerCmd(s),
 	)
 	return cmd
 }

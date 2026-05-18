@@ -74,6 +74,11 @@ type Connector interface {
 	// its status when the target column maps to a different workflow step.
 	MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error)
 
+	// UpdateStory applies a partial patch to an existing story. Only fields whose
+	// pointer in patch is non-nil are modified; the rest of the story keeps its
+	// current value. Returns a precondition error when the story is unknown.
+	UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error)
+
 	// PostComment posts a comment on a story. No-op for connectors without
 	// comment support (e.g. filefs); the implementation must return ok=true.
 	PostComment(ctx context.Context, storyRef, body string) (domain.WriteResult, error)

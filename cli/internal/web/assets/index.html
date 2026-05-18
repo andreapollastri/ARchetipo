@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ARchetipo &middot; Backlog Viewer</title>
+    <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark">A</span>
+            <span class="brand-name">ARchetipo</span>
+            <span class="brand-sub">backlog viewer</span>
+        </div>
+        <div class="topbar-actions">
+            <button id="refresh-btn" type="button" class="ghost-btn">Refresh</button>
+        </div>
+    </header>
+
+    <main id="board" class="board" aria-live="polite"></main>
+
+    <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="story-editor-title">
+        <div class="modal">
+            <header class="modal-header">
+                <h2 id="story-editor-title" class="modal-title">Story</h2>
+                <button id="modal-close" type="button" class="icon-btn" aria-label="Close">&times;</button>
+            </header>
+            <nav class="modal-tabs" role="tablist">
+                <button type="button" class="tab active" data-tab="story" role="tab" aria-selected="true">Story</button>
+                <button type="button" class="tab" data-tab="plan" role="tab" aria-selected="false">Plan</button>
+            </nav>
+            <section class="tab-panel active" data-panel="story">
+                <form id="story-form" class="form-grid">
+                    <label class="field full">
+                        <span>Title</span>
+                        <input type="text" name="title" required />
+                    </label>
+                    <label class="field">
+                        <span>Priority</span>
+                        <select name="priority">
+                            <option value="HIGH">HIGH</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="LOW">LOW</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Story Points</span>
+                        <input type="number" name="story_points" min="0" max="100" />
+                    </label>
+                    <label class="field">
+                        <span>Scope</span>
+                        <input type="text" name="scope" placeholder="MVP / Growth / Vision" />
+                    </label>
+                    <label class="field">
+                        <span>Blocked by</span>
+                        <input type="text" name="blocked_by" placeholder="US-002, US-003" />
+                    </label>
+                    <label class="field full">
+                        <span>Body (markdown)</span>
+                        <textarea name="body" rows="14" spellcheck="false"></textarea>
+                    </label>
+                    <div class="field full preview-toggle">
+                        <button type="button" id="story-preview-btn" class="ghost-btn">Toggle preview</button>
+                    </div>
+                    <div class="field full markdown-preview hidden" id="story-preview"></div>
+                    <div class="form-actions full">
+                        <button type="submit" class="primary-btn">Save story</button>
+                        <span class="status-msg" id="story-status"></span>
+                    </div>
+                </form>
+            </section>
+            <section class="tab-panel" data-panel="plan">
+                <form id="plan-form" class="form-grid">
+                    <label class="field full">
+                        <span>Plan body (markdown)</span>
+                        <textarea name="plan_body" rows="10" spellcheck="false"></textarea>
+                    </label>
+                    <div class="field full preview-toggle">
+                        <button type="button" id="plan-preview-btn" class="ghost-btn">Toggle preview</button>
+                    </div>
+                    <div class="field full markdown-preview hidden" id="plan-preview"></div>
+                    <div class="field full">
+                        <div class="tasks-header">
+                            <span>Tasks</span>
+                            <button type="button" id="add-task-btn" class="ghost-btn">+ Add task</button>
+                        </div>
+                        <table class="tasks-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Deps</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasks-tbody"></tbody>
+                        </table>
+                    </div>
+                    <div class="form-actions full">
+                        <button type="submit" class="primary-btn">Save plan</button>
+                        <span class="status-msg" id="plan-status"></span>
+                    </div>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/vendor/sortable.min.js"></script>
+    <script src="/vendor/marked.min.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>

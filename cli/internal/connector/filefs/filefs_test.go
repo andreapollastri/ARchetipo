@@ -167,6 +167,76 @@ func TestPlanRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpdateStory(t *testing.T) {
+	c := newTestConnector(t)
+	ctx := context.Background()
+	_, err := c.SaveInitialBacklog(ctx, []domain.Story{{
+		Code:        "US-001",
+		Title:       "Setup",
+		Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
+		Priority:    domain.PriorityMedium,
+		StoryPoints: 3,
+		Status:      domain.StatusTodo,
+		Scope:       "MVP",
+		Body:        "## Story\n\nOriginal.",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newTitle := "Setup project"
+	newPriority := domain.PriorityHigh
+	newPoints := 5
+	newBody := "## Story\n\nUpdated."
+	patch := domain.StoryUpdate{
+		Title:       &newTitle,
+		Priority:    &newPriority,
+		StoryPoints: &newPoints,
+		Body:        &newBody,
+	}
+	if _, err := c.UpdateStory(ctx, "US-001", patch); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.ReadStoryDetail(ctx, "US-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != newTitle {
+		t.Errorf("title not updated: %q", got.Title)
+	}
+	if got.Priority != newPriority {
+		t.Errorf("priority not updated: %q", got.Priority)
+	}
+	if got.StoryPoints != newPoints {
+		t.Errorf("story_points not updated: %d", got.StoryPoints)
+	}
+	if got.Body != newBody {
+		t.Errorf("body not updated: %q", got.Body)
+	}
+	// untouched fields preserved
+	if got.Scope != "MVP" {
+		t.Errorf("scope unexpectedly changed: %q", got.Scope)
+	}
+	if got.Epic.Code != "EP-001" {
+		t.Errorf("epic unexpectedly changed: %+v", got.Epic)
+	}
+}
+
+func TestUpdateStoryUnknownReturnsPrecondition(t *testing.T) {
+	c := newTestConnector(t)
+	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{
+		Code: "US-001", Title: "Setup",
+		Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityHigh, StoryPoints: 1, Status: domain.StatusTodo,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := "ghost"
+	_, err = c.UpdateStory(context.Background(), "US-404", domain.StoryUpdate{Title: &title})
+	if err == nil {
+		t.Fatal("expected error for unknown story")
+	}
+}
+
 func TestStoryFilesStoreEpicAsCodeOnly(t *testing.T) {
 	c := newTestConnector(t)
 	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{

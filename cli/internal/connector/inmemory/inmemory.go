@@ -335,6 +335,39 @@ func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (dom
 	return domain.WriteResult{OK: true}, nil
 }
 
+func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.stories {
+		if c.stories[i].Code == storyRef || c.stories[i].Ref == storyRef {
+			if patch.Title != nil {
+				c.stories[i].Title = *patch.Title
+			}
+			if patch.Priority != nil {
+				c.stories[i].Priority = *patch.Priority
+			}
+			if patch.StoryPoints != nil {
+				c.stories[i].StoryPoints = *patch.StoryPoints
+			}
+			if patch.Scope != nil {
+				c.stories[i].Scope = *patch.Scope
+			}
+			if patch.BlockedBy != nil {
+				c.stories[i].BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
+			}
+			if patch.Body != nil {
+				c.stories[i].Body = *patch.Body
+			}
+			if patch.Epic != nil {
+				c.stories[i].Epic = *patch.Epic
+			}
+			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: c.stories[i].Code}}}, nil
+		}
+	}
+	return domain.WriteResult{}, iox.NewPrecondition(
+		fmt.Sprintf("story %s not found", storyRef), "", nil)
+}
+
 // codeFor resolves a ref (code or numeric ref) into the story code. Empty
 // when the ref is unknown.
 func (c *Connector) codeFor(ref string) string {

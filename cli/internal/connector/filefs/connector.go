@@ -359,6 +359,61 @@ func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (dom
 	return domain.WriteResult{OK: true}, nil
 }
 
+// ReadPlanBody returns the prose body of a story's plan, if any. It is not on
+// the Connector interface because not every backend keeps a separate body:
+// the github connector mixes it into the parent issue body. The web viewer
+// discovers this method at runtime via a type assertion.
+func (c *Connector) ReadPlanBody(ctx context.Context, storyCode string) (string, error) {
+	plan, err := c.readPlan(storyCode)
+	if err != nil {
+		return "", err
+	}
+	return plan.Body, nil
+}
+
+func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+	store, err := c.loadStore()
+	if err != nil {
+		return domain.WriteResult{}, err
+	}
+	story, ok := store.Stories[storyRef]
+	if !ok {
+		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
+	}
+	if patch.Title != nil {
+		story.Title = *patch.Title
+	}
+	if patch.Priority != nil {
+		story.Priority = *patch.Priority
+	}
+	if patch.StoryPoints != nil {
+		story.StoryPoints = *patch.StoryPoints
+	}
+	if patch.Scope != nil {
+		story.Scope = *patch.Scope
+	}
+	if patch.BlockedBy != nil {
+		story.BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
+	}
+	if patch.Body != nil {
+		story.Body = *patch.Body
+	}
+	if patch.Epic != nil {
+		story.Epic = *patch.Epic
+	}
+	store.Stories[storyRef] = story
+	if err := c.writeStore(store); err != nil {
+		return domain.WriteResult{}, err
+	}
+	return domain.WriteResult{
+		OK: true,
+		Refs: []domain.Ref{
+			{Code: storyRef, Path: c.storyPath(storyRef)},
+			{Code: storyRef, Path: c.backlogPath()},
+		},
+	}, nil
+}
+
 func refsFromStories(stories []domain.Story, path string) []domain.Ref {
 	out := make([]domain.Ref, 0, len(stories))
 	for _, story := range stories {

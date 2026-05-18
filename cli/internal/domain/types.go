@@ -192,3 +192,17 @@ type ReorderAnchor struct {
 	Before string
 	After  string
 }
+
+// StoryUpdate is a partial patch over an existing Story. Pointer fields
+// distinguish "not provided" (nil) from "set to zero value" (non-nil pointing
+// at the zero value). Connectors must only touch fields whose pointer is
+// non-nil and leave the rest untouched.
+type StoryUpdate struct {
+	Title       *string   `json:"title,omitempty"`
+	Priority    *Priority `json:"priority,omitempty"`
+	StoryPoints *int      `json:"story_points,omitempty"`
+	Scope       *Scope    `json:"scope,omitempty"`
+	BlockedBy   *[]string `json:"blocked_by,omitempty"`
+	Body        *string   `json:"body,omitempty"`
+	Epic        *Epic     `json:"epic,omitempty"`
+}
