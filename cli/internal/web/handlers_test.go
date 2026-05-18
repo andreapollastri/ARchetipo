@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,7 +9,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/config"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector/filefs"
@@ -282,6 +285,60 @@ func TestListMockupsUnsupportedConnectorReturnsEmpty(t *testing.T) {
 	}
 	if len(got.Mockups) != 0 {
 		t.Errorf("expected empty list, got %+v", got.Mockups)
+	}
+}
+
+func TestStreamBoardSendsEventOnPublish(t *testing.T) {
+	srv, _ := newTestServer(t)
+	ts := httptest.NewServer(srv.mux)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/board/stream", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("expected SSE content type, got %q", ct)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	// Read the initial ": connected" comment so the stream is established
+	// before we publish, otherwise the publish could race the subscribe.
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("read initial comment: %v", err)
+	}
+
+	// Give the SSE handler a moment to register its subscription on the broker.
+	time.Sleep(50 * time.Millisecond)
+	srv.broker.Publish()
+
+	gotEvent := make(chan string, 1)
+	go func() {
+		var buf strings.Builder
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			buf.WriteString(line)
+			if strings.Contains(buf.String(), "event: board_changed") {
+				gotEvent <- buf.String()
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-gotEvent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not receive board_changed event within 2s")
 	}
 }
 

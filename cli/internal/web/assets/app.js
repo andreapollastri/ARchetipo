@@ -149,6 +149,27 @@
 
     loadBoard();
     loadMockups();
+    connectBoardStream();
+
+    let boardReloadTimer = null;
+    function scheduleBoardReload() {
+        clearTimeout(boardReloadTimer);
+        boardReloadTimer = setTimeout(() => {
+            // Skip while a modal is open: reloading would discard the user's
+            // in-progress edits. The next event after the modal closes will
+            // bring the board back in sync.
+            if (!modal.classList.contains('hidden')) return;
+            if (!prdModal.classList.contains('hidden')) return;
+            loadBoard();
+        }, 150);
+    }
+
+    function connectBoardStream() {
+        if (typeof EventSource === 'undefined') return;
+        const es = new EventSource('/api/board/stream');
+        es.addEventListener('board_changed', scheduleBoardReload);
+        // EventSource reconnects automatically on transient errors; no log to avoid noise.
+    }
 
     async function loadBoard() {
         boardEl.innerHTML = '<div class="empty-board">Loading…</div>';

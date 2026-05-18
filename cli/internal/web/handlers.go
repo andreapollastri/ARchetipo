@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/domain"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
@@ -99,6 +101,48 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 		view.Columns = append(view.Columns, c)
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// handleStreamBoard streams Server-Sent Events to the browser. The handler
+// keeps the connection open for as long as the client is connected; every
+// time the filesystem watcher publishes a change, a `board_changed` event is
+// flushed. A periodic comment line acts as a heartbeat so intermediary proxies
+// (and the browser itself) do not close the connection as idle.
+func (s *Server) handleStreamBoard(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	ch, unsub := s.broker.Subscribe()
+	defer unsub()
+
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprint(w, "event: board_changed\ndata: {}\n\n")
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 type storyDetailView struct {
