@@ -23,27 +23,20 @@ const (
 )
 
 type backlogDoc struct {
-	Schema   string                `yaml:"schema"`
-	Version  int                   `yaml:"version"`
-	Workflow domain.WorkflowConfig `yaml:"workflow"`
-	Epics    []domain.Epic         `yaml:"epics,omitempty"`
-	Board    boardDoc              `yaml:"board"`
-	Orders   ordersDoc             `yaml:"orders"`
-}
-
-type boardDoc struct {
-	Columns []boardColumnDoc `yaml:"columns"`
+	Schema  string        `yaml:"schema"`
+	Version int           `yaml:"version"`
+	Epics   []domain.Epic `yaml:"epics,omitempty"`
+	Orders  ordersDoc     `yaml:"orders"`
 }
 
 type boardColumnDoc struct {
-	ID     string        `yaml:"id"`
-	Title  string        `yaml:"title"`
-	Status domain.Status `yaml:"status"`
+	ID     string
+	Title  string
+	Status domain.Status
 }
 
 type ordersDoc struct {
-	Backlog []string            `yaml:"backlog"`
-	Board   map[string][]string `yaml:"board"`
+	Board map[string][]string `yaml:"board"`
 }
 
 type storyDoc struct {
@@ -223,19 +216,15 @@ func (c *Connector) loadLegacyStore() (yamlStore, error) {
 		return yamlStore{}, err
 	}
 	out := make(map[string]domain.Story, len(stories))
-	order := make([]string, 0, len(stories))
 	for _, story := range stories {
 		story.Ref = story.Code
 		out[story.Code] = story
-		order = append(order, story.Code)
 	}
 	backlog := c.normalizeBacklog(backlogDoc{
-		Schema:   backlogSchema,
-		Version:  2,
-		Workflow: c.cfg.Workflow,
+		Schema:  backlogSchema,
+		Version: 2,
 		Orders: ordersDoc{
-			Backlog: order,
-			Board:   map[string][]string{},
+			Board: map[string][]string{},
 		},
 	}, out)
 	return yamlStore{Backlog: backlog, Stories: out}, nil
@@ -346,10 +335,7 @@ func writeYAML(path string, v any) error {
 func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.Story) backlogDoc {
 	doc.Schema = backlogSchema
 	doc.Version = 2
-	doc.Workflow = c.cfg.Workflow
-	if len(doc.Board.Columns) == 0 {
-		doc.Board.Columns = defaultBoardColumns(c.cfg.Workflow.Statuses)
-	}
+	columns := c.boardColumns()
 	if doc.Orders.Board == nil {
 		doc.Orders.Board = map[string][]string{}
 	}
@@ -368,23 +354,18 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 	}
 	sort.Slice(doc.Epics, func(i, j int) bool { return doc.Epics[i].Code < doc.Epics[j].Code })
 
-	ordered := dedupeKnown(doc.Orders.Backlog, stories)
-	missing := missingCodes(stories, ordered)
-	sort.Strings(missing)
-	doc.Orders.Backlog = append(ordered, missing...)
-
 	boardSeen := map[string]struct{}{}
-	normalizedBoard := make(map[string][]string, len(doc.Board.Columns))
-	for _, col := range doc.Board.Columns {
+	normalizedBoard := make(map[string][]string, len(columns))
+	for _, col := range columns {
 		normalizedBoard[col.ID] = []string{}
 	}
-	for _, col := range doc.Board.Columns {
+	for _, col := range columns {
 		for _, code := range doc.Orders.Board[col.ID] {
 			story, ok := stories[code]
 			if !ok {
 				continue
 			}
-			if expected, ok := columnIDForStatus(doc.Board.Columns, story.Status); !ok || expected != col.ID {
+			if expected, ok := columnIDForStatus(columns, story.Status); !ok || expected != col.ID {
 				continue
 			}
 			if _, dup := boardSeen[code]; dup {
@@ -394,22 +375,28 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 			boardSeen[code] = struct{}{}
 		}
 	}
-	for _, code := range doc.Orders.Backlog {
+	remaining := make([]string, 0, len(stories))
+	for code := range stories {
 		if _, ok := boardSeen[code]; ok {
 			continue
 		}
-		story, ok := stories[code]
+		remaining = append(remaining, code)
+	}
+	sort.Strings(remaining)
+	for _, code := range remaining {
+		story := stories[code]
+		colID, ok := columnIDForStatus(columns, story.Status)
 		if !ok {
-			continue
-		}
-		colID, ok := columnIDForStatus(doc.Board.Columns, story.Status)
-		if !ok {
-			colID = doc.Board.Columns[0].ID
+			colID = columns[0].ID
 		}
 		normalizedBoard[colID] = append(normalizedBoard[colID], code)
 	}
 	doc.Orders.Board = normalizedBoard
 	return doc
+}
+
+func (c *Connector) boardColumns() []boardColumnDoc {
+	return defaultBoardColumns(c.cfg.Workflow.Statuses)
 }
 
 func defaultBoardColumns(labels domain.StatusLabels) []boardColumnDoc {
@@ -438,36 +425,6 @@ func columnStatus(columns []boardColumnDoc, id string) (domain.Status, bool) {
 		}
 	}
 	return "", false
-}
-
-func dedupeKnown(order []string, stories map[string]domain.Story) []string {
-	out := make([]string, 0, len(order))
-	seen := map[string]struct{}{}
-	for _, code := range order {
-		if _, ok := stories[code]; !ok {
-			continue
-		}
-		if _, dup := seen[code]; dup {
-			continue
-		}
-		out = append(out, code)
-		seen[code] = struct{}{}
-	}
-	return out
-}
-
-func missingCodes(stories map[string]domain.Story, have []string) []string {
-	seen := map[string]struct{}{}
-	for _, code := range have {
-		seen[code] = struct{}{}
-	}
-	out := make([]string, 0)
-	for code := range stories {
-		if _, ok := seen[code]; !ok {
-			out = append(out, code)
-		}
-	}
-	return out
 }
 
 func insertRelative(list []string, code string, anchor domain.ReorderAnchor) ([]string, error) {

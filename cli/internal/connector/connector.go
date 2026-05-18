@@ -1,5 +1,5 @@
 // Package connector defines the abstract interface implemented by every
-// ARchetipo connector. The 13 methods mirror the public workflow operations
+// ARchetipo connector. Methods mirror the public workflow operations
 // exposed by the CLI.
 package connector
 
@@ -66,9 +66,6 @@ type Connector interface {
 
 	// CompleteTask marks a single task as completed.
 	CompleteTask(ctx context.Context, parentRef, taskRef string) (domain.WriteResult, error)
-
-	// ReorderBacklog repositions a story within the linear backlog order.
-	ReorderBacklog(ctx context.Context, storyRef string, anchor domain.ReorderAnchor) (domain.WriteResult, error)
 
 	// MoveBoardCard repositions a story inside the board, optionally changing
 	// its status when the target column maps to a different workflow step.

@@ -312,37 +312,6 @@ func (s *Server) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-type reorderReq struct {
-	Code   string  `json:"code"`
-	Before *string `json:"before,omitempty"`
-	After  *string `json:"after,omitempty"`
-}
-
-func (s *Server) handleReorderBacklog(w http.ResponseWriter, r *http.Request) {
-	var req reorderReq
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, err)
-		return
-	}
-	if req.Code == "" {
-		writeError(w, iox.NewInvalidInput("code is required", "", nil))
-		return
-	}
-	anchor := domain.ReorderAnchor{}
-	if req.Before != nil {
-		anchor.Before = *req.Before
-	}
-	if req.After != nil {
-		anchor.After = *req.After
-	}
-	res, err := s.conn.ReorderBacklog(r.Context(), req.Code, anchor)
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
-}
-
 // helpers
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

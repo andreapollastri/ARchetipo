@@ -226,54 +226,6 @@ func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string)
 		fmt.Sprintf("task %s not found in %s", taskRef, parentRef), "", nil)
 }
 
-func (c *Connector) ReorderBacklog(ctx context.Context, storyRef string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	idx := -1
-	for i := range c.stories {
-		if c.stories[i].Code == storyRef || c.stories[i].Ref == storyRef {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
-	}
-	story := c.stories[idx]
-	c.stories = append(c.stories[:idx], c.stories[idx+1:]...)
-	insertAt := len(c.stories)
-	switch {
-	case anchor.Before != "" && anchor.After != "":
-		return domain.WriteResult{}, iox.NewInvalidInput("before and after are mutually exclusive", "", nil)
-	case anchor.Before != "":
-		insertAt = -1
-		for i := range c.stories {
-			if c.stories[i].Code == anchor.Before {
-				insertAt = i
-				break
-			}
-		}
-		if insertAt == -1 {
-			return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", anchor.Before), "", nil)
-		}
-	case anchor.After != "":
-		insertAt = -1
-		for i := range c.stories {
-			if c.stories[i].Code == anchor.After {
-				insertAt = i + 1
-				break
-			}
-		}
-		if insertAt == -1 {
-			return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", anchor.After), "", nil)
-		}
-	}
-	c.stories = append(c.stories, domain.Story{})
-	copy(c.stories[insertAt+1:], c.stories[insertAt:])
-	c.stories[insertAt] = story
-	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: story.Code}}}, nil
-}
-
 func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

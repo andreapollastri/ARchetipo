@@ -395,24 +395,6 @@ func TestBoardMove_ChangesStatusAndOrder(t *testing.T) {
 	}
 }
 
-func TestBacklogReorder_ChangesLinearOrder(t *testing.T) {
-	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "story", "add", "--file", storiesFile); res.exit != 0 {
-		t.Fatalf("seed add failed: %s", res.stderr.String())
-	}
-	if res := runCLI(t, "", "backlog", "reorder", "US-002", "--before", "US-001"); res.exit != 0 {
-		t.Fatalf("reorder failed: %s", res.stderr.String())
-	}
-	res := runCLI(t, "", "backlog", "show")
-	_, data := decodeOK(t, res)
-	items, _ := data["items"].([]any)
-	first, _ := items[0].(map[string]any)
-	if first["code"] != "US-002" {
-		t.Fatalf("expected US-002 first after reorder, got %v", first["code"])
-	}
-}
-
 func TestPRDWrite(t *testing.T) {
 	newProject(t)
 	res := runCLI(t, "# Product Vision\n\nMVP for early adopters.", "prd", "write")

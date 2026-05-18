@@ -399,15 +399,6 @@ func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (dom
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: storyRef, Number: num}}}, nil
 }
 
-func (c *Connector) ReorderBacklog(ctx context.Context, storyRef string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
-	return domain.WriteResult{}, iox.NewConnector(
-		iox.CodeConnectorBackend,
-		"backlog reorder is not supported by the github connector yet",
-		"use the project board order directly on GitHub for now",
-		nil,
-	)
-}
-
 func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
 	return domain.WriteResult{}, iox.NewConnector(
 		iox.CodeConnectorBackend,

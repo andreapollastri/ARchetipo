@@ -27,3 +27,7 @@ node_modules/
 .pi
 cli/archetipo
 .archetipo/bin/*
+
+.archetipo/stories/*
+.archetipo/plans/*
+.archetipo/backlog.yaml

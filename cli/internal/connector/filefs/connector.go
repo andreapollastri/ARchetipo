@@ -51,16 +51,18 @@ func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.S
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.Story, 0, len(store.Backlog.Orders.Backlog))
-	for _, code := range store.Backlog.Orders.Backlog {
-		story, ok := store.Stories[code]
-		if !ok {
-			continue
+	out := make([]domain.Story, 0, len(store.Stories))
+	for _, col := range c.boardColumns() {
+		for _, code := range store.Backlog.Orders.Board[col.ID] {
+			story, ok := store.Stories[code]
+			if !ok {
+				continue
+			}
+			if statusFilter != "" && story.Status != statusFilter {
+				continue
+			}
+			out = append(out, story)
 		}
-		if statusFilter != "" && story.Status != statusFilter {
-			continue
-		}
-		out = append(out, story)
 	}
 	return out, nil
 }
@@ -128,15 +130,17 @@ func (c *Connector) ReadExistingBacklog(ctx context.Context) (domain.BacklogSumm
 	}
 	out := domain.BacklogSummary{}
 	seenEpics := map[string]domain.Epic{}
-	for _, code := range store.Backlog.Orders.Backlog {
-		story, ok := store.Stories[code]
-		if !ok {
-			continue
-		}
-		out.Codes = append(out.Codes, story.Code)
-		out.Titles = append(out.Titles, story.Title)
-		if story.Epic.Code != "" {
-			seenEpics[story.Epic.Code] = story.Epic
+	for _, col := range c.boardColumns() {
+		for _, code := range store.Backlog.Orders.Board[col.ID] {
+			story, ok := store.Stories[code]
+			if !ok {
+				continue
+			}
+			out.Codes = append(out.Codes, story.Code)
+			out.Titles = append(out.Titles, story.Title)
+			if story.Epic.Code != "" {
+				seenEpics[story.Epic.Code] = story.Epic
+			}
 		}
 	}
 	sortedCodes := append([]string(nil), out.Codes...)
@@ -250,17 +254,15 @@ func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Sto
 
 	store := yamlStore{
 		Backlog: c.normalizeBacklog(backlogDoc{
-			Schema:   backlogSchema,
-			Version:  2,
-			Workflow: c.cfg.Workflow,
-			Orders:   ordersDoc{Backlog: []string{}, Board: map[string][]string{}},
+			Schema:  backlogSchema,
+			Version: 2,
+			Orders:  ordersDoc{Board: map[string][]string{}},
 		}, map[string]domain.Story{}),
 		Stories: map[string]domain.Story{},
 	}
 	for _, story := range stories {
 		story.Ref = story.Code
 		store.Stories[story.Code] = story
-		store.Backlog.Orders.Backlog = append(store.Backlog.Orders.Backlog, story.Code)
 	}
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
@@ -287,7 +289,6 @@ func (c *Connector) AppendStories(ctx context.Context, stories []domain.Story) (
 		}
 		story.Ref = story.Code
 		store.Stories[story.Code] = story
-		store.Backlog.Orders.Backlog = append(store.Backlog.Orders.Backlog, story.Code)
 		added = append(added, story)
 	}
 	if err := c.writeStore(store); err != nil {
@@ -322,7 +323,7 @@ func (c *Connector) TransitionStatus(ctx context.Context, storyRef string, newSt
 	if !ok {
 		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
 	}
-	colID, ok := columnIDForStatus(store.Backlog.Board.Columns, newStatus)
+	colID, ok := columnIDForStatus(c.boardColumns(), newStatus)
 	if !ok {
 		return domain.WriteResult{}, iox.NewConflict(fmt.Sprintf("status %s is not mapped to a board column", newStatus), "", nil)
 	}
@@ -372,25 +373,6 @@ func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string)
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: taskRef, Path: c.planPath(parentRef)}}}, nil
 }
 
-func (c *Connector) ReorderBacklog(ctx context.Context, storyRef string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
-	store, err := c.loadStore()
-	if err != nil {
-		return domain.WriteResult{}, err
-	}
-	if _, ok := store.Stories[storyRef]; !ok {
-		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
-	}
-	order, err := insertRelative(store.Backlog.Orders.Backlog, storyRef, anchor)
-	if err != nil {
-		return domain.WriteResult{}, err
-	}
-	store.Backlog.Orders.Backlog = order
-	if err := c.writeStore(store); err != nil {
-		return domain.WriteResult{}, err
-	}
-	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: storyRef, Path: c.backlogPath()}}}, nil
-}
-
 func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	store, err := c.loadStore()
 	if err != nil {
@@ -400,7 +382,7 @@ func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn st
 	if !ok {
 		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
 	}
-	targetStatus, ok := columnStatus(store.Backlog.Board.Columns, targetColumn)
+	targetStatus, ok := columnStatus(c.boardColumns(), targetColumn)
 	if !ok {
 		return domain.WriteResult{}, iox.NewInvalidInput(
 			fmt.Sprintf("unknown board column %q", targetColumn),

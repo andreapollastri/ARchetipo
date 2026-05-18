@@ -88,7 +88,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/story/{code}", s.handleUpdateStory)
 	s.mux.HandleFunc("PUT /api/story/{code}/plan", s.handleSavePlan)
 	s.mux.HandleFunc("POST /api/board/move", s.handleMoveCard)
-	s.mux.HandleFunc("POST /api/backlog/reorder", s.handleReorderBacklog)
 	s.mux.HandleFunc("GET /api/prd", s.handleGetPRD)
 	s.mux.HandleFunc("PUT /api/prd", s.handleSavePRD)
 	s.mux.HandleFunc("GET /api/mockups", s.handleListMockups)
