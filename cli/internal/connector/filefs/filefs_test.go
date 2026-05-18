@@ -237,7 +237,7 @@ func TestUpdateStoryUnknownReturnsPrecondition(t *testing.T) {
 	}
 }
 
-func TestStoryFilesStoreEpicAsCodeOnly(t *testing.T) {
+func TestStoryFilesStoreEpicWithCodeAndTitle(t *testing.T) {
 	c := newTestConnector(t)
 	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{
 		Code:        "US-001",
@@ -257,11 +257,11 @@ func TestStoryFilesStoreEpicAsCodeOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	if !strings.Contains(text, "epic: EP-001\n") {
-		t.Fatalf("expected scalar epic code in story file, got:\n%s", text)
+	if !strings.Contains(text, "code: EP-001") {
+		t.Fatalf("expected epic code in story file, got:\n%s", text)
 	}
-	if strings.Contains(text, "title: Foundations") {
-		t.Fatalf("story file should not duplicate epic title, got:\n%s", text)
+	if !strings.Contains(text, "title: Foundations") {
+		t.Fatalf("expected epic title in story file, got:\n%s", text)
 	}
 
 	store, err := c.loadStore()
@@ -269,6 +269,37 @@ func TestStoryFilesStoreEpicAsCodeOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := store.Stories["US-001"].Epic.Title; got != "Foundations" {
-		t.Fatalf("expected epic title restored from backlog metadata, got %q", got)
+		t.Fatalf("expected epic title preserved, got %q", got)
+	}
+}
+
+func TestStoryFilesReadLegacyScalarEpic(t *testing.T) {
+	c := newTestConnector(t)
+	storiesDir := filepath.Join(c.cfg.ProjectRoot, ".archetipo", "stories")
+	if err := os.MkdirAll(storiesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backlog := "schema: archetipo/backlog/v2\nversion: 2\nepics:\n  - code: EP-001\n    title: Foundations\norders:\n  board: {}\n"
+	if err := os.WriteFile(filepath.Join(c.cfg.ProjectRoot, ".archetipo", "backlog.yaml"), []byte(backlog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacyStory := "schema: archetipo/story/v2\ncode: US-001\ntitle: Setup\nepic: EP-001\npriority: HIGH\nstory_points: 3\nstatus: TODO\n"
+	if err := os.WriteFile(filepath.Join(storiesDir, "US-001.yaml"), []byte(legacyStory), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := c.loadStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := store.Stories["US-001"]
+	if !ok {
+		t.Fatalf("story US-001 not loaded; got %+v", store.Stories)
+	}
+	if st.Epic.Code != "EP-001" {
+		t.Errorf("epic code lost from legacy scalar: %q", st.Epic.Code)
+	}
+	if st.Epic.Title != "Foundations" {
+		t.Errorf("epic title fallback failed; got %q want %q", st.Epic.Title, "Foundations")
 	}
 }

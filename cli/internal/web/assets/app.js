@@ -244,6 +244,8 @@
         el.className = 'card';
         if (story.priority) el.classList.add('prio-' + story.priority);
         el.dataset.code = story.code;
+        const epicCode = story.epic && story.epic.code ? story.epic.code : '';
+        const epicTooltip = story.epic && story.epic.title ? `${epicCode} — ${story.epic.title}` : epicCode;
         el.innerHTML = `
             <div class="card-top">
                 <span class="card-code">${escapeHtml(story.code)}</span>
@@ -251,7 +253,7 @@
             </div>
             <div class="card-title">${escapeHtml(story.title || '(untitled)')}</div>
             <div class="card-meta">
-                <span class="card-epic">${story.epic && story.epic.code ? escapeHtml(story.epic.code) : ''}</span>
+                <span class="card-epic" title="${escapeHtml(epicTooltip)}">${escapeHtml(epicCode)}</span>
                 <span class="card-points">${Number.isFinite(story.story_points) ? story.story_points + ' pt' : ''}</span>
             </div>
         `;
@@ -320,6 +322,10 @@
         const metaParts = [];
         if (s.priority) metaParts.push(`<span class="priority-badge priority-${escapeHtml(s.priority)}">${escapeHtml(s.priority)}</span>`);
         if (Number.isFinite(s.story_points) && s.story_points > 0) metaParts.push(`<span class="meta-chip">${s.story_points} pt</span>`);
+        if (s.epic && s.epic.code) {
+            const epicText = s.epic.title ? `${s.epic.code} — ${s.epic.title}` : s.epic.code;
+            metaParts.push(`<span class="meta-chip">${escapeHtml(epicText)}</span>`);
+        }
         if (s.scope) metaParts.push(`<span class="meta-chip">${escapeHtml(s.scope)}</span>`);
         if (s.blocked_by && s.blocked_by.length) metaParts.push(`<span class="meta-chip blocked">blocked by ${escapeHtml(s.blocked_by.join(', '))}</span>`);
         const mockup = findMockupForStory(s.code);

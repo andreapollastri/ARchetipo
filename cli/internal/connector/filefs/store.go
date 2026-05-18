@@ -43,7 +43,7 @@ type storyDoc struct {
 	Schema      string          `yaml:"schema"`
 	Code        string          `yaml:"code"`
 	Title       string          `yaml:"title"`
-	Epic        string          `yaml:"epic"`
+	Epic        storyEpicDoc    `yaml:"epic,omitempty"`
 	Priority    domain.Priority `yaml:"priority"`
 	StoryPoints int             `yaml:"story_points"`
 	Status      domain.Status   `yaml:"status"`
@@ -52,6 +52,33 @@ type storyDoc struct {
 	Body        string          `yaml:"body,omitempty"`
 	Ref         string          `yaml:"ref,omitempty"`
 	URL         string          `yaml:"url,omitempty"`
+}
+
+// storyEpicDoc is the on-disk representation of a story's epic. It accepts
+// the legacy scalar form (`epic: EP-001`) on read and always writes the full
+// mapping form (`epic: {code, title}`) so each story file is self-contained.
+type storyEpicDoc struct {
+	Code  string `yaml:"code"`
+	Title string `yaml:"title,omitempty"`
+}
+
+func (e *storyEpicDoc) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		e.Code = node.Value
+		e.Title = ""
+		return nil
+	}
+	type rawEpic storyEpicDoc
+	var raw rawEpic
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+	*e = storyEpicDoc(raw)
+	return nil
+}
+
+func (e storyEpicDoc) IsZero() bool {
+	return e.Code == "" && e.Title == ""
 }
 
 type planDoc struct {
@@ -272,7 +299,7 @@ func storyDocFromStory(story domain.Story) storyDoc {
 	return storyDoc{
 		Code:        story.Code,
 		Title:       story.Title,
-		Epic:        story.Epic.Code,
+		Epic:        storyEpicDoc{Code: story.Epic.Code, Title: story.Epic.Title},
 		Priority:    story.Priority,
 		StoryPoints: story.StoryPoints,
 		Status:      story.Status,
@@ -288,7 +315,7 @@ func (d storyDoc) toStory() domain.Story {
 	return domain.Story{
 		Code:        d.Code,
 		Title:       d.Title,
-		Epic:        domain.Epic{Code: d.Epic},
+		Epic:        domain.Epic{Code: d.Epic.Code, Title: d.Epic.Title},
 		Priority:    d.Priority,
 		StoryPoints: d.StoryPoints,
 		Status:      d.Status,
