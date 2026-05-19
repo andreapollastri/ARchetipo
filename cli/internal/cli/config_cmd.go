@@ -8,12 +8,12 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector"
 )
 
-// newInitCmd implements `archetipo init` -> initialize_connector.
+// newConfigCmd implements `archetipo config` -> initialize_connector.
 //
 // Output kind: "setup"
-func newInitCmd(s streams) *cobra.Command {
+func newConfigCmd(s streams) *cobra.Command {
 	return &cobra.Command{
-		Use:   "init",
+		Use:   "config",
 		Short: "Initialize the connector and emit metadata",
 		Long:  "Authenticates (when applicable), detects repo/project, and prints connector metadata as JSON on stdout.",
 		Args:  cobra.NoArgs,

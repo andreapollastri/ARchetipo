@@ -1,0 +1,20 @@
+{
+  "name": "@techreloaded/archetipo-win32-x64",
+  "version": "0.0.0-dev",
+  "description": "ARchetipo native binary for win32/x64",
+  "license": "MIT",
+  "homepage": "https://github.com/techreloaded-ar/ARchetipo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/techreloaded-ar/ARchetipo.git"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}

@@ -31,19 +31,44 @@ Gli AI coding agent sono potenti, ma tendono a rispondere a prompt isolati senza
 
 ## Quickstart
 
-### 1. Installa ARchetipo nel tuo progetto
-
-**macOS / Linux**
+### 1. Installa la CLI una volta sola (globale)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.sh | bash
+npm i -g @techreloaded/archetipo
 ```
 
-**Windows (PowerShell)**
+Un'unica installazione, funziona su macOS, Linux e Windows. Si aggiorna con `archetipo update`.
 
-```powershell
+> Su Linux, se `npm i -g` lamenta problemi di permessi, imposta una volta
+> un prefix nella tua home: `npm config set prefix ~/.npm-global` e
+> aggiungi `~/.npm-global/bin` al `PATH`.
+
+### 2. Inizializza un progetto
+
+```bash
+cd il-mio-progetto
+archetipo init                                      # interattivo: scegli tool + connector
+# oppure non-interattivo:
+archetipo init --tool claude --connector file
+```
+
+`init` copia le skill di ARchetipo nella cartella del tool scelto
+(`.claude/skills/`, `.gemini/skills/`, …) e scrive
+`.archetipo/config.yaml` e `.archetipo/shared-runtime.md` nel progetto.
+
+### Installer alternativi (senza Node.js)
+
+Gli installer shell legacy sono ancora disponibili per ambienti senza npm:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.sh | bash
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.ps1 | iex
 ```
+
+Copiano la CLI in `.archetipo/bin/` del progetto. Per i nuovi progetti
+preferisci il percorso npm sopra.
 
 ---
 
@@ -102,7 +127,7 @@ In ogni fase di ARchetipo, avrai a che fare con personas AI diverse, ognuna con 
 Le skill non sanno **dove** vivono gli artefatti: delegano la persistenza a un **connector** configurabile tramite la CLI `archetipo`.
 
 - **Regole runtime** → `.archetipo/shared-runtime.md` (envelope JSON, gestione errori, disciplina CLI)
-- **Operazioni** → comandi `.archetipo/bin/archetipo ...` dichiarati esplicitamente dentro ogni skill
+- **Operazioni** → comandi `archetipo ...` dichiarati esplicitamente dentro ogni skill
 
 Cambiare connector avviene tramite `.archetipo/config.yaml`, senza toccare la logica di workflow delle skill.
 
@@ -209,7 +234,7 @@ ARchetipo nasce in Italia e mantiene una voce riconoscibile: un team con nomi pr
 <details>
 <summary><b>Come si fa il debug di una skill?</b></summary>
 
-Ogni skill dichiara quali reference carica. Attiva la modalità verbose del tuo AI tool e controlla che i comandi `.archetipo/bin/archetipo ...` attesi siano eseguiti nell'ordine corretto.
+Ogni skill dichiara quali reference carica. Attiva la modalità verbose del tuo AI tool e controlla che i comandi `archetipo ...` attesi siano eseguiti nell'ordine corretto.
 </details>
 
 ---

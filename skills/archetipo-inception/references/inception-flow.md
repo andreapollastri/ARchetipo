@@ -148,7 +148,7 @@ PRD Progress:
 When the minimum is met:
 1. Read `prd-template.md`
 2. Generate the PRD using `prd-template.md` as the format template
-3. Pipe the PRD markdown into `.archetipo/bin/archetipo prd write` and verify the resulting `write_result` envelope
+3. Pipe the PRD markdown into `archetipo prd write` and verify the resulting `write_result` envelope
 4. Confirm completion
 
 ## Information Extraction Protocol

@@ -7,7 +7,7 @@ description: Implements a planned user story by executing its technical implemen
 
 You facilitate a **user story implementation** session with a virtual delivery team. Your goal is to implement the planned story, add the necessary tests, pass code review, and move the story to review while following the existing implementation plan.
 
-The implementation plan is loaded via a single CLI call: `.archetipo/bin/archetipo story show {US-CODE}` returns both the story body and the task list in one envelope (`data.story`, `data.tasks`).
+The implementation plan is loaded via a single CLI call: `archetipo story show {US-CODE}` returns both the story body and the task list in one envelope (`data.story`, `data.tasks`).
 
 ## Shared Runtime
 
@@ -32,7 +32,7 @@ This section has priority over every other section in the skill.
 3. **Concurrency is conditional.** Run multiple workers concurrently only when tasks in the same wave are truly independent.
 4. **In-context fallback is non-blocking.** If workers are unavailable, unreliable, or not worth the overhead, execute the same pipeline in the current context. Lack of worker support is not an error and not a reason to stop.
 5. **Stop only for explicit blockers.** Do not invent new reasons to ask the user.
-6. **Connector operations are exposed by the CLI.** Every operation is a sub-command of `.archetipo/bin/archetipo`. This skill uses `init`, `story show`, `story start`, `task done`, and `story review`. Parse stdout/stderr as the shared JSON envelopes and branch on `error.code`. Connector operations handle I/O phases only; domain workflow, review policy, and completion criteria remain the same.
+6. **Connector operations are exposed by the CLI.** Every operation is a sub-command of `archetipo`. This skill uses `init`, `story show`, `story start`, `task done`, and `story review`. Parse stdout/stderr as the shared JSON envelopes and branch on `error.code`. Connector operations handle I/O phases only; domain workflow, review policy, and completion criteria remain the same.
 
 ## Autonomy Policy
 
@@ -93,11 +93,11 @@ Do not avoid worker-backed execution only because a wave must be scheduled seque
 
 ### PHASE 0 - Setup, Story Selection, and Plan Loading
 
-1. Run `.archetipo/bin/archetipo init` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
+1. Run `archetipo config` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
 3. Load the story and its plan with a single CLI call:
-   - If a code was passed: `.archetipo/bin/archetipo story show {US-CODE}`
-   - Otherwise: `.archetipo/bin/archetipo story show --status {config.workflow.statuses.planned}` (auto-pick first eligible by priority + code)
+   - If a code was passed: `archetipo story show {US-CODE}`
+   - Otherwise: `archetipo story show --status {config.workflow.statuses.planned}` (auto-pick first eligible by priority + code)
 
    The envelope returns `data.story` (the full Story including `body`) and `data.tasks` (the implementation task list).
 
@@ -106,7 +106,7 @@ Do not avoid worker-backed execution only because a wave must be scheduled seque
 
 4. Load the relevant project context: agent instructions (CLAUDE.md, AGENTS.md), project config, conventions, and existing patterns in the touched area.
 5. If the plan contains UI work, scan it for mockups or design references and search `{config.paths.mockups}` for matching files. Treat explicitly referenced mockups as the source of truth.
-6. Run `.archetipo/bin/archetipo story start {US-CODE}` to transition the story to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a story already `IN PROGRESS` is a safe no-op.
+6. Run `archetipo story start {US-CODE}` to transition the story to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a story already `IN PROGRESS` is a safe no-op.
 7. Announce the session briefly using the template from `./references/output-templates.md` ("Session Announcement").
 
 ### Validation policy for task parsing
@@ -141,7 +141,7 @@ For each task:
 1. Read only the relevant sections of the touched files.
 2. Follow the implementation plan unless doing so would hit an explicit blocker.
 3. Follow mockups when UI work is involved.
-4. Mark the task as done: run `.archetipo/bin/archetipo task done {US-CODE} {TASK-ID}`.
+4. Mark the task as done: run `archetipo task done {US-CODE} {TASK-ID}`.
 5. Announce completion briefly.
 
 #### Ugo's rules
@@ -290,7 +290,7 @@ Do not end with the story still in `{config.workflow.statuses.in_progress}`, and
 ### PHASE 5 - Completion & Backlog Update
 
 1. Run the full required test suite one final time. If it fails, return to the fix loop and do not transition the story.
-2. Pipe the completion summary markdown into `.archetipo/bin/archetipo story review {US-CODE}`. This single command transitions the story to `{config.workflow.statuses.review}` AND posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
+2. Pipe the completion summary markdown into `archetipo story review {US-CODE}`. This single command transitions the story to `{config.workflow.statuses.review}` AND posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
 3. Confirm completion with a concise summary. See `references/output-templates.md` for the "Completion Summary" template. If non-blocking `🟡 IMPROVEMENT` items remain open, include them in the final report under an explicit optional improvements section.
 
 ## Edge Case Handling

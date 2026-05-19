@@ -41,17 +41,17 @@ Agents appear only in the **Team Brief** output. Each agent speaks **1-3 sentenc
 
 #### Step 0 — Config Loading & Connector Dispatch
 
-1. Run `.archetipo/bin/archetipo init` and parse the stdout JSON envelope; keep the `data` (SetupInfo) available.
+1. Run `archetipo config` and parse the stdout JSON envelope; keep the `data` (SetupInfo) available.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
 3. This skill uses only these CLI operations:
-   - `.archetipo/bin/archetipo init`
-   - `.archetipo/bin/archetipo story show {US-CODE}`
-   - `.archetipo/bin/archetipo story show --status {config.workflow.statuses.todo}`
-   - `.archetipo/bin/archetipo story plan {US-CODE} --file <path>`
+   - `archetipo config`
+   - `archetipo story show {US-CODE}`
+   - `archetipo story show --status {config.workflow.statuses.todo}`
+   - `archetipo story plan {US-CODE} --file <path>`
 
 #### Step 1 — Story Selection
 
-Run `.archetipo/bin/archetipo story show` with one of the two mutually exclusive forms:
+Run `archetipo story show` with one of the two mutually exclusive forms:
 
 - If a user story code was passed (e.g. "US-005"): `archetipo story show US-005`
 - If no argument was passed: `archetipo story show --status {config.workflow.statuses.todo}` (auto-select first eligible by priority + code)
@@ -157,7 +157,7 @@ In a **single turn**, produce both:
 
 **2. Save the plan and transition the story:**
 
-Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the story code (e.g. `tmp-payload-US-005-plan.json`). Write the file to `.archetipo/` using your file-writing tool. Then invoke `.archetipo/bin/archetipo story plan {US-CODE} --file <path>`. After the CLI exits, delete the temp file.
+Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the story code (e.g. `tmp-payload-US-005-plan.json`). Write the file to `.archetipo/` using your file-writing tool. Then invoke `archetipo story plan {US-CODE} --file <path>`. After the CLI exits, delete the temp file.
 
 > **⚠️ Cross-platform warning:** Do NOT pipe the JSON through stdin via shell (`--file -` with shell pipe). Shell pipes are OS-dependent and can corrupt JSON that contains markdown with special characters (`` ` ``, `$`, `{`, line breaks, Unicode). Use your file-writing tool to write the JSON file first, then pass its path to `--file`.
 >

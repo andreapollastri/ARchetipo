@@ -15,11 +15,11 @@ Read `.archetipo/shared-runtime.md` for Language Policy, Assumptions and Questio
 
 ## Config Loading & Connector Dispatch
 
-1. Run `.archetipo/bin/archetipo init` and parse the stdout JSON envelope (`{"schema":"archetipo/v1","kind":"setup","data":{...}}`).
+1. Run `archetipo config` and parse the stdout JSON envelope (`{"schema":"archetipo/v1","kind":"setup","data":{...}}`).
 2. On failure, parse stderr as `{"schema":"archetipo/v1","kind":"error","error":{"code":"E_*","message":"...","hint":"..."}}` and branch on `error.code`.
 3. This skill uses only these CLI operations:
-   - `.archetipo/bin/archetipo init`
-   - `.archetipo/bin/archetipo prd write`
+   - `archetipo config`
+   - `archetipo prd write`
 
 If the CLI cannot find `.archetipo/config.yaml`, it falls back to its built-in defaults for connector, paths, and workflow statuses.
 
@@ -52,6 +52,6 @@ Load context progressively and keep the working context lean:
 ## Output Boundaries
 
 - Produce the PRD using `./references/prd-template.md` as the format template
-- Persist the PRD by piping the markdown into `.archetipo/bin/archetipo prd write` and verifying the resulting `write_result` envelope
+- Persist the PRD by piping the markdown into `archetipo prd write` and verifying the resulting `write_result` envelope
 - Do not generate or mutate backlog artifacts in this skill
 - If the user asks for backlog generation, epics, or user stories from an existing PRD, that belongs to `archetipo-spec`

@@ -3,6 +3,8 @@
     "test": "npm run test:installer-encoding && npm run test:cli",
     "build:cli": "cd cli && go run github.com/goreleaser/goreleaser/v2@v2.15.4 release --snapshot --clean",
     "release:cli": "cd cli && go run github.com/goreleaser/goreleaser/v2@v2.15.4 release --clean",
+    "build:npm": "node ./scripts/build-npm.mjs",
+    "publish:npm": "node ./scripts/publish-npm.mjs",
     "test:installer-encoding": "node ./test/check-installer-encoding.mjs",
     "test:cli": "cd cli && go test ./...",
     "test:e2e:file": "node ./test/e2e/run.mjs --connector file",

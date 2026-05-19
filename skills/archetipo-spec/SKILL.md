@@ -20,7 +20,7 @@ Read `.archetipo/shared-runtime.md` for Language Policy, Assumptions and Questio
 Keep the working context lean:
 - Load this file first
 - Load exactly one main flow reference at activation time
-- Connector logic lives in the `.archetipo/bin/archetipo` CLI; this skill never interprets a connector file
+- Connector logic lives in the `archetipo` CLI; this skill never interprets a connector file
 
 ## Supported Modes
 
@@ -51,12 +51,12 @@ In this mode:
 
 ## Config Loading & Connector Dispatch
 
-1. Run `.archetipo/bin/archetipo init` and parse the stdout JSON envelope. The `data` field is a `SetupInfo` object.
+1. Run `archetipo config` and parse the stdout JSON envelope. The `data` field is a `SetupInfo` object.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
 3. This skill uses only these CLI operations:
-   - `.archetipo/bin/archetipo init`
-   - `.archetipo/bin/archetipo backlog show`
-   - `.archetipo/bin/archetipo story add --file <path|->`
+   - `archetipo config`
+   - `archetipo backlog show`
+   - `archetipo story add --file <path|->`
 
 Extract and keep available from `data`:
 - `connector`
@@ -70,7 +70,7 @@ Extract and keep available from `data`:
 
 Use this routine whenever the skill must decide whether it is extending an existing backlog or creating the first one.
 
-Run `.archetipo/bin/archetipo backlog show` and parse the JSON envelope. The CLI returns `data.items` (full Story objects) and `data.summary` with codes, last code, epics, and titles for the existing backlog.
+Run `archetipo backlog show` and parse the JSON envelope. The CLI returns `data.items` (full Story objects) and `data.summary` with codes, last code, epics, and titles for the existing backlog.
 
 If `data.summary.codes` is non-empty, use the existing stories as the source of truth for backlog extension.
 If `data.summary.codes` is empty, treat the project as backlog-less and route to initial backlog creation.
@@ -96,7 +96,7 @@ If a PRD is not found and the active flow needs one, ask the user for one of the
 Use these routing rules before producing any substantive output.
 
 1. Load this file
-2. Run `.archetipo/bin/archetipo init` and use `data.paths` / `data.workflow.statuses` as the project metadata source
+2. Run `archetipo config` and use `data.paths` / `data.workflow.statuses` as the project metadata source
 3. Run backlog discovery
 4. Decide the flow
 

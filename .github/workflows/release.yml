@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          registry-url: "https://registry.npmjs.org"
       - name: Tests
         run: npm test
       - name: GoReleaser
@@ -32,3 +33,9 @@ jobs:
           workdir: cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sync npm packages
+        run: node ./scripts/build-npm.mjs "${GITHUB_REF_NAME}"
+      - name: Publish to npm
+        run: node ./scripts/publish-npm.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

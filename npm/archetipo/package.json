@@ -1,0 +1,42 @@
+{
+  "name": "@techreloaded/archetipo",
+  "version": "0.0.0-dev",
+  "description": "ARchetipo — AI-driven product development workflow CLI",
+  "keywords": [
+    "archetipo",
+    "ai",
+    "claude",
+    "agents",
+    "workflow",
+    "cli"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/techreloaded-ar/ARchetipo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/techreloaded-ar/ARchetipo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/techreloaded-ar/ARchetipo/issues"
+  },
+  "bin": {
+    "archetipo": "bin/archetipo.js"
+  },
+  "files": [
+    "bin/",
+    "skills/",
+    "runtime/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@techreloaded/archetipo-darwin-arm64": "0.0.0-dev",
+    "@techreloaded/archetipo-darwin-x64": "0.0.0-dev",
+    "@techreloaded/archetipo-linux-arm64": "0.0.0-dev",
+    "@techreloaded/archetipo-linux-x64": "0.0.0-dev",
+    "@techreloaded/archetipo-win32-arm64": "0.0.0-dev",
+    "@techreloaded/archetipo-win32-x64": "0.0.0-dev"
+  }
+}

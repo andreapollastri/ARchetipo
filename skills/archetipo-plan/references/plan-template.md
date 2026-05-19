@@ -1,6 +1,6 @@
 # ARchetipo Plan — Document Template
 
-> Document template for the plan produced by the skill. Persistence is the CLI's responsibility after `.archetipo/bin/archetipo story plan {US-CODE} --file -`.
+> Document template for the plan produced by the skill. Persistence is the CLI's responsibility after `archetipo story plan {US-CODE} --file -`.
 > **Language rule:** All section headers and table column headers in this template must be rendered in the detected language of the project (see Language Policy in `.archetipo/shared-runtime.md`). The connector parses the task table by column index, not by header text — headers may be translated freely.
 
 ---

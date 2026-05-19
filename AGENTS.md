@@ -25,7 +25,9 @@ cli/                     # Modulo Go che implementa la CLI `archetipo`
     connector/           # Interfaccia + due implementazioni (filefs, github)
     config/              # Loader di .archetipo/config.yaml
     iox/                 # Envelope JSON stdin/stdout/stderr
-install.ps1 / install.sh # Installer per i vari tool
+install.ps1 / install.sh # Installer legacy (curl|bash) — alternativa senza Node.js
+npm/                     # Pacchetto npm (@techreloaded/archetipo + 6 sub-package per piattaforma)
+scripts/                 # Build e publish dei pacchetti npm
 ```
 
 ## Architettura connector
@@ -33,7 +35,7 @@ install.ps1 / install.sh # Installer per i vari tool
 Le skill non gestiscono direttamente la persistenza e non eseguono operazioni di connector "interpretando" istruzioni. Il flusso è sempre:
 
 1. La skill legge `.archetipo/shared-runtime.md` per envelope JSON, regole sugli errori e disciplina di invocazione.
-2. La skill invoca `.archetipo/bin/archetipo <subcmd>` (binario Go installato nel progetto target).
+2. La skill invoca `archetipo <subcmd>` (binario Go installato globalmente via `npm i -g @techreloaded/archetipo`).
 3. La CLI legge `.archetipo/config.yaml` per scegliere il connector (`file` o `github`) ed esegue l'operazione in modo deterministico.
 
 Le skill devono incorporare esplicitamente i sub-comandi CLI che usano davvero, con i relativi payload, envelope attesi ed `error.code` rilevanti. Non esiste un file separato che descrive l'intero protocollo.
@@ -52,11 +54,20 @@ Le skill devono incorporare esplicitamente i sub-comandi CLI che usano davvero, 
 - Le 13 operazioni pubbliche della CLI sono stabili: ogni cambiamento incompatibile è un breaking change e va versionato.
 - Mantenere la conformance suite (`cli/internal/connector/conformance/`) verde su tutte le implementazioni: file, github, inmemory.
 - Tutte le query GraphQL del connector github vivono in `cli/internal/connector/github/templates.go`. Aggiungere snapshot test prima di modificarle.
-- Distribuzione: il binario è versionato insieme alle skill (un solo tag per repo). `install.sh --local` compila localmente; senza `--local` scarica il binario dalla release tag corrispondente.
+- Distribuzione: il binario è versionato insieme alle skill (un solo tag per repo). Su tag `v*` il workflow `release.yml` esegue GoReleaser per produrre le binary in `cli/dist/`, poi `scripts/build-npm.mjs` sincronizza le binary nei 6 sotto-pacchetti `@techreloaded/archetipo-{os}-{arch}` e le skill nel pacchetto principale `@techreloaded/archetipo`, infine `scripts/publish-npm.mjs` pubblica tutti i 7 pacchetti su npm.
 
 ## Installazione (per utenti finali)
 
-Gli installer (`install.ps1` / `install.sh`) copiano le skill dalla dir `skills/` nelle directory specifiche di ogni tool. Il flag `-Local` installa dalla copia locale invece che da GitHub.
+Percorso principale (qualsiasi sistema con Node.js):
+
+```bash
+npm i -g @techreloaded/archetipo     # CLI globale nel PATH
+archetipo init [--tool …] [--connector …]
+```
+
+Lo shim Node in `npm/archetipo/bin/archetipo.js` risolve il sub-package binario per la piattaforma corrente, setta `ARCHETIPO_DATA_DIR` e spawna la binary Go. Le skill bundle sono in `npm/archetipo/skills/` e vengono copiate da `archetipo init` verso `.{tool}/skills/` nel progetto.
+
+Percorso alternativo (legacy, senza Node): gli installer `install.ps1` / `install.sh` continuano a funzionare e copiano la binary in `.archetipo/bin/archetipo` del progetto target.
 
 ## Note operative
 

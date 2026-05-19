@@ -151,11 +151,11 @@ The state file has two purposes:
 
 1. Parse user arguments (steps, epic, priority, max-stories, stop-when, on-error)
 
-2. Run `.archetipo/bin/archetipo init` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
+2. Run `archetipo config` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
    Parse stderr as the JSON error envelope and branch on `error.code`.
    This skill uses only these CLI operations directly:
-   - `.archetipo/bin/archetipo init`
-   - `.archetipo/bin/archetipo backlog show [--status STATUS]`
+   - `archetipo config`
+   - `archetipo backlog show [--status STATUS]`
 
 3. **Cleanup residual state files:** find all `.archetipo/autopilot-state-*.yaml` files with terminal status (`completed`, `max_reached`, `stopped`) and delete them.
 
@@ -183,7 +183,7 @@ The state file has two purposes:
 
 5. **Build the story queue.** Read the backlog once and select stories.
 
-   Run `.archetipo/bin/archetipo backlog show` (no `--status` flag) and parse the JSON envelope to evaluate every item against the pipeline steps.
+   Run `archetipo backlog show` (no `--status` flag) and parse the JSON envelope to evaluate every item against the pipeline steps.
 
    **Story selection rules:**
    - If `--steps` includes `plan`: select stories with `status: TODO`
@@ -343,7 +343,7 @@ After each story pipeline completes, run these checks in order:
 **Check A — Exit condition met:**
 If `--stop-when` was specified, verify the condition. This requires re-reading the backlog to check current statuses.
 
-Re-run `.archetipo/bin/archetipo backlog show` to get current statuses.
+Re-run `archetipo backlog show` to get current statuses.
 
 Evaluate the `--stop-when` condition against the current state (e.g., "EP-001 completato" → check if all EP-001 stories are in REVIEW or DONE).
 

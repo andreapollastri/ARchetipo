@@ -31,19 +31,44 @@ AI coding agents are powerful, but they tend to answer isolated prompts without 
 
 ## Quickstart
 
-### 1. Install ARchetipo in your project
-
-**macOS / Linux**
+### 1. Install the CLI once (global)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.sh | bash
+npm i -g @techreloaded/archetipo
 ```
 
-**Windows (PowerShell)**
+Single install, works on macOS, Linux and Windows. Updates with `archetipo update`.
 
-```powershell
+> On Linux, if `npm i -g` complains about permissions, set a user-owned
+> prefix once: `npm config set prefix ~/.npm-global` and add
+> `~/.npm-global/bin` to your `PATH`.
+
+### 2. Initialise a project
+
+```bash
+cd my-project
+archetipo init                                      # interactive: pick tools + connector
+# or non-interactive:
+archetipo init --tool claude --connector file
+```
+
+`init` copies the ARchetipo skills under the chosen tool's directory
+(`.claude/skills/`, `.gemini/skills/`, …) and writes
+`.archetipo/config.yaml` and `.archetipo/shared-runtime.md` in the project.
+
+### Alternative installer (without Node.js)
+
+The legacy shell installers remain available for environments without npm:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.sh | bash
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/techreloaded-ar/ARchetipo/main/install.ps1 | iex
 ```
+
+They install a per-project copy of the CLI under `.archetipo/bin/`. New
+projects should prefer the npm path above.
 
 ---
 
@@ -102,7 +127,7 @@ In every phase of ARchetipo, you will work with different AI personas, each with
 Skills don't know **where** artifacts live: they delegate persistence to a configurable **connector** through the `archetipo` CLI.
 
 - **Runtime rules** → `.archetipo/shared-runtime.md` (JSON envelopes, error handling, CLI discipline)
-- **Operations** → explicit `.archetipo/bin/archetipo ...` commands embedded in each skill
+- **Operations** → explicit `archetipo ...` commands embedded in each skill
 
 Switching connectors happens through `.archetipo/config.yaml`, without touching the skills' workflow logic.
 
@@ -209,7 +234,7 @@ ARchetipo was born in Italy and keeps a recognizable voice: a team with proper n
 <details>
 <summary><b>How do I debug a skill?</b></summary>
 
-Every skill declares which references it loads. Turn on your AI tool's verbose mode and verify that the expected `.archetipo/bin/archetipo ...` commands are executed in the expected order.
+Every skill declares which references it loads. Turn on your AI tool's verbose mode and verify that the expected `archetipo ...` commands are executed in the expected order.
 </details>
 
 ---

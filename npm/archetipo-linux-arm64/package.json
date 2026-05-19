@@ -1,0 +1,20 @@
+{
+  "name": "@techreloaded/archetipo-linux-arm64",
+  "version": "0.0.0-dev",
+  "description": "ARchetipo native binary for linux/arm64",
+  "license": "MIT",
+  "homepage": "https://github.com/techreloaded-ar/ARchetipo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/techreloaded-ar/ARchetipo.git"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/"
+  ]
+}

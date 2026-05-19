@@ -5,11 +5,11 @@ Load this file once at activation time, before loading any flow reference.
 
 ## CLI Runtime Contract
 
-ARchetipo skills use `.archetipo/bin/archetipo` as the only backend for PRD, backlog, plan, task, and workflow-status operations.
+ARchetipo skills use `archetipo` as the only backend for PRD, backlog, plan, task, and workflow-status operations.
 
 Common rules:
 
-- Run `.archetipo/bin/archetipo init` at the start of every skill that needs project metadata or configured paths.
+- Run `archetipo config` at the start of every skill that needs project metadata or configured paths.
 - Parse stdout as a JSON success envelope:
 
 ```json

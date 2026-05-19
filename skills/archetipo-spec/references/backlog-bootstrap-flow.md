@@ -35,7 +35,7 @@ Rotation rule:
 ## Connector Dispatch
 
 The CLI runtime is already initialized during `SKILL.md` setup.
-All I/O operations in this flow use explicit `.archetipo/bin/archetipo ...` commands defined by the skill.
+All I/O operations in this flow use explicit `archetipo ...` commands defined by the skill.
 Domain logic in this file is connector-independent.
 
 ## Phase 0 - Setup and PRD Discovery
@@ -182,7 +182,7 @@ Emanuele validates:
 
 ## Phase 5 - Output Generation
 
-Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the story code range (e.g. `tmp-payload-US-001-US-015.json`). Write the file to `.archetipo/` using your file-writing tool. Then invoke `.archetipo/bin/archetipo story add --file <path>`. After the CLI exits, delete the temp file.
+Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the story code range (e.g. `tmp-payload-US-001-US-015.json`). Write the file to `.archetipo/` using your file-writing tool. Then invoke `archetipo story add --file <path>`. After the CLI exits, delete the temp file.
 
 > **⚠️ Cross-platform warning:** Do NOT generate the JSON via shell scripting (PowerShell heredoc, bash `cat <<EOF`, or pipe-to-stdin). Shell heredocs break when markdown bodies contain `$`, `{`, or `` ` `` characters. Shell variable interpolation converts objects to `[object Object]`. Use your file-writing tool to write the JSON file directly — this works correctly on every OS.
 >

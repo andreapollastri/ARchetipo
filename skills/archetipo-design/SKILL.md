@@ -25,7 +25,7 @@ This skill is **mockup-only**.
 
 ### 0. Config loading
 
-Run `.archetipo/bin/archetipo init` to discover the configured `paths.mockups` (the CLI returns defaults when `.archetipo/config.yaml` is missing).
+Run `archetipo config` to discover the configured `paths.mockups` (the CLI returns defaults when `.archetipo/config.yaml` is missing).
 
 Use `{config.paths.mockups}` as the base output path for every generated artifact. This skill does not invoke other CLI sub-commands — it writes mockup files directly under the configured mockups path.
 

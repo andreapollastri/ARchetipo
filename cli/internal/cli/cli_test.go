@@ -95,9 +95,9 @@ const planJSON = `{"plan_body":"## Plan\nDo the work","tasks":[
 	{"id":"TASK-02","title":"Test","type":"Test","status":"TODO"}
 ]}`
 
-func TestInit(t *testing.T) {
+func TestConfig(t *testing.T) {
 	newProject(t)
-	res := runCLI(t, "", "init")
+	res := runCLI(t, "", "config")
 	kind, _ := decodeOK(t, res)
 	if kind != "setup" {
 		t.Fatalf("expected kind=setup, got %s", kind)
