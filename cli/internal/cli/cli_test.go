@@ -455,3 +455,21 @@ func TestPRDWrite_FromFileFlag(t *testing.T) {
 		t.Fatalf("expected ok=true, got %v", data["ok"])
 	}
 }
+
+func TestVersionCommand(t *testing.T) {
+	res := runCLI(t, "", "version")
+	if res.exit != 0 {
+		t.Fatalf("exit=%d stderr=%s", res.exit, res.stderr.String())
+	}
+	if !strings.HasPrefix(res.stdout.String(), "archetipo ") {
+		t.Fatalf("unexpected stdout: %q", res.stdout.String())
+	}
+}
+
+func TestVersionFlagMatchesCommand(t *testing.T) {
+	cmd := runCLI(t, "", "version")
+	flag := runCLI(t, "", "--version")
+	if cmd.stdout.String() != flag.stdout.String() {
+		t.Fatalf("mismatch: cmd=%q flag=%q", cmd.stdout.String(), flag.stdout.String())
+	}
+}

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
@@ -59,7 +58,7 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		SilenceErrors: true,
 		Version:       version.Version,
 	}
-	cmd.SetVersionTemplate(fmt.Sprintf("archetipo %s\n", version.Version))
+	cmd.SetVersionTemplate(versionLine())
 	cmd.SetContext(context.Background())
 
 	s := streams{in: stdin, out: stdout, err: stderr}
@@ -72,6 +71,7 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 		newSpecCmd(s),
 		newTaskCmd(s),
 		newViewCmd(s),
+		newVersionCmd(s),
 	)
 	return cmd
 }
