@@ -95,7 +95,7 @@ query($projectId: ID!, $after: String) {
             __typename
             ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
           }
-          storyPoints: fieldValueByName(name: "Story Points") {
+          points: fieldValueByName(name: "Story Points") {
             __typename
             ... on ProjectV2ItemFieldNumberValue { number }
           }

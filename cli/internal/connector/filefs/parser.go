@@ -10,10 +10,10 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
 )
 
-// storyHeader matches `#### US-001: Title` (canonical) or any heading level
+// specHeader matches `#### US-001: Title` (canonical) or any heading level
 // 2-6 ending in `US-XXX:` so the parser is forgiving on heading depth chosen
 // by the skill. Also captures the title.
-var storyHeader = regexp.MustCompile(`^(#{2,6})\s+(US-\d+):\s+(.+?)\s*$`)
+var specHeader = regexp.MustCompile(`^(#{2,6})\s+(US-\d+):\s+(.+?)\s*$`)
 
 // taskTableHeader is the canonical machine-readable table header. It MUST be
 // the first row of the Implementation Tasks table. Skills that want to
@@ -25,15 +25,15 @@ var taskTableHeader = regexp.MustCompile(`^\|\s*status\s*\|\s*id\s*\|\s*title\s*
 // taskTableSeparator matches a GFM alignment row.
 var taskTableSeparator = regexp.MustCompile(`^\|\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|\s*$`)
 
-// parseBacklog reads a BACKLOG.md content and extracts every story block.
-// The story body is everything between the heading and the next story heading
+// parseBacklog reads a BACKLOG.md content and extracts every spec block.
+// The spec body is everything between the heading and the next spec heading
 // (or EOF), excluding the marker line itself.
-func parseBacklog(content string) ([]domain.Story, error) {
+func parseBacklog(content string) ([]domain.Spec, error) {
 	lines := strings.Split(content, "\n")
-	var stories []domain.Story
+	var specs []domain.Spec
 	i := 0
 	for i < len(lines) {
-		m := storyHeader.FindStringSubmatch(lines[i])
+		m := specHeader.FindStringSubmatch(lines[i])
 		if m == nil {
 			i++
 			continue
@@ -41,7 +41,7 @@ func parseBacklog(content string) ([]domain.Story, error) {
 		title := m[3]
 		// Look ahead a few lines for the marker. Skills MUST emit the
 		// marker on the first non-blank line after the heading.
-		var st domain.Story
+		var st domain.Spec
 		var foundMarker bool
 		j := i + 1
 		for ; j < len(lines) && j-i <= 4; j++ {
@@ -52,14 +52,14 @@ func parseBacklog(content string) ([]domain.Story, error) {
 			if !ok {
 				break
 			}
-			if mk.Kind != "story" {
+			if mk.Kind != "spec" {
 				break
 			}
-			s, err := storyFromMarker(mk)
+			s, err := specFromMarker(mk)
 			if err != nil {
 				return nil, iox.NewInvalidInput(
-					fmt.Sprintf("malformed story marker on line %d", j+1),
-					"every story must have a `<!-- archetipo:story ... -->` marker as its first non-blank line",
+					fmt.Sprintf("malformed spec marker on line %d", j+1),
+					"every spec must have a `<!-- archetipo:spec ... -->` marker as its first non-blank line",
 					err)
 			}
 			st = s
@@ -69,26 +69,26 @@ func parseBacklog(content string) ([]domain.Story, error) {
 		}
 		if !foundMarker {
 			return nil, iox.NewInvalidInput(
-				fmt.Sprintf("story %q on line %d has no archetipo:story marker", title, i+1),
-				"add `<!-- archetipo:story code=US-XXX epic=EP-XXX priority=... -->` after the heading",
+				fmt.Sprintf("spec %q on line %d has no archetipo:spec marker", title, i+1),
+				"add `<!-- archetipo:spec code=US-XXX epic=EP-XXX priority=... -->` after the heading",
 				nil)
 		}
 		st.Title = title
 		st.Ref = st.Code
-		// Body extends until the next storyHeader match or EOF.
+		// Body extends until the next specHeader match or EOF.
 		bodyStart := j
 		k := bodyStart
 		for ; k < len(lines); k++ {
-			if storyHeader.MatchString(lines[k]) {
+			if specHeader.MatchString(lines[k]) {
 				break
 			}
 		}
 		body := strings.TrimSpace(strings.Join(lines[bodyStart:k], "\n"))
 		st.Body = body
-		stories = append(stories, st)
+		specs = append(specs, st)
 		i = k
 	}
-	return stories, nil
+	return specs, nil
 }
 
 // parsePlan extracts task rows from a planning file. Returns the plan body

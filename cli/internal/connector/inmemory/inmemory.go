@@ -20,15 +20,15 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
 )
 
-// Connector is an in-memory store of stories, tasks, plan bodies and the PRD.
+// Connector is an in-memory store of specs, tasks, plan bodies and the PRD.
 type Connector struct {
 	mu sync.Mutex
 
-	cfg     config.Config
-	prd     string
-	stories []domain.Story
-	tasks   map[string][]domain.Task
-	plans   map[string]string // storyCode -> plan body
+	cfg   config.Config
+	prd   string
+	specs []domain.Spec
+	tasks map[string][]domain.Task
+	plans map[string]string // specCode -> plan body
 }
 
 // New returns an empty in-memory connector backed by cfg.
@@ -44,11 +44,11 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 	}, nil
 }
 
-func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Story, error) {
+func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Spec, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := make([]domain.Story, 0, len(c.stories))
-	for _, s := range c.stories {
+	out := make([]domain.Spec, 0, len(c.specs))
+	for _, s := range c.specs {
 		if statusFilter != "" && s.Status != statusFilter {
 			continue
 		}
@@ -57,62 +57,62 @@ func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.S
 	return out, nil
 }
 
-func (c *Connector) SelectStory(ctx context.Context, q domain.SelectQuery) (domain.Story, error) {
+func (c *Connector) SelectSpec(ctx context.Context, q domain.SelectQuery) (domain.Spec, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if q.StoryCode != "" {
-		for _, s := range c.stories {
-			if s.Code == q.StoryCode {
+	if q.SpecCode != "" {
+		for _, s := range c.specs {
+			if s.Code == q.SpecCode {
 				return s, nil
 			}
 		}
-		return domain.Story{}, iox.NewPrecondition(
-			fmt.Sprintf("story %s not found", q.StoryCode),
+		return domain.Spec{}, iox.NewPrecondition(
+			fmt.Sprintf("spec %s not found", q.SpecCode),
 			"check the backlog or run `archetipo spec list`", nil)
 	}
 	eligible := make(map[domain.Status]struct{}, len(q.EligibleStatuses))
 	for _, st := range q.EligibleStatuses {
 		eligible[st] = struct{}{}
 	}
-	candidates := make([]domain.Story, 0, len(c.stories))
-	for _, s := range c.stories {
+	candidates := make([]domain.Spec, 0, len(c.specs))
+	for _, s := range c.specs {
 		if _, ok := eligible[s.Status]; ok {
 			candidates = append(candidates, s)
 		}
 	}
 	if len(candidates) == 0 {
-		return domain.Story{}, iox.NewPrecondition("no eligible stories",
+		return domain.Spec{}, iox.NewPrecondition("no eligible specs",
 			"adjust --eligible or run `archetipo spec list`", nil)
 	}
 	domain.SortByPriorityThenCode(candidates)
 	return candidates[0], nil
 }
 
-func (c *Connector) ReadStoryDetail(ctx context.Context, ref string) (domain.Story, error) {
+func (c *Connector) ReadSpecDetail(ctx context.Context, ref string) (domain.Spec, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, s := range c.stories {
+	for _, s := range c.specs {
 		if s.Code == ref || s.Ref == ref {
 			return s, nil
 		}
 	}
-	return domain.Story{}, iox.NewPrecondition(
-		fmt.Sprintf("story %s not found", ref), "", nil)
+	return domain.Spec{}, iox.NewPrecondition(
+		fmt.Sprintf("spec %s not found", ref), "", nil)
 }
 
-func (c *Connector) ReadStoryTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
+func (c *Connector) ReadSpecTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	tasks, ok := c.tasks[parentRef]
 	if !ok {
 		// fall back: maybe parentRef is a code, look it up
-		for _, s := range c.stories {
+		for _, s := range c.specs {
 			if s.Code == parentRef || s.Ref == parentRef {
 				return append([]domain.Task(nil), c.tasks[s.Code]...), nil
 			}
 		}
 		return nil, iox.NewPrecondition(
-			fmt.Sprintf("no plan for story %s", parentRef),
+			fmt.Sprintf("no plan for spec %s", parentRef),
 			"run `archetipo plan save` first", nil)
 	}
 	return append([]domain.Task(nil), tasks...), nil
@@ -123,7 +123,7 @@ func (c *Connector) ReadExistingBacklog(ctx context.Context) (domain.BacklogSumm
 	defer c.mu.Unlock()
 	out := domain.BacklogSummary{}
 	seenEpics := map[string]domain.Epic{}
-	for _, s := range c.stories {
+	for _, s := range c.specs {
 		out.Codes = append(out.Codes, s.Code)
 		out.Titles = append(out.Titles, s.Title)
 		if _, ok := seenEpics[s.Epic.Code]; !ok && s.Epic.Code != "" {
@@ -148,39 +148,39 @@ func (c *Connector) SavePRD(ctx context.Context, content string) (domain.WriteRe
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Path: c.cfg.Paths.PRD}}}, nil
 }
 
-func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
+func (c *Connector) SaveInitialBacklog(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.stories) > 0 {
+	if len(c.specs) > 0 {
 		return domain.WriteResult{}, iox.NewConnector(iox.CodeConflict,
-			"backlog is not empty", "use `archetipo spec add` to add stories", nil)
+			"backlog is not empty", "use `archetipo spec add` to add specs", nil)
 	}
-	c.stories = append([]domain.Story(nil), stories...)
-	refs := make([]domain.Ref, 0, len(stories))
-	for _, s := range stories {
+	c.specs = append([]domain.Spec(nil), specs...)
+	refs := make([]domain.Ref, 0, len(specs))
+	for _, s := range specs {
 		refs = append(refs, domain.Ref{Code: s.Code})
 	}
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) AppendStories(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
+func (c *Connector) AppendSpecs(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.stories = append(c.stories, stories...)
-	refs := make([]domain.Ref, 0, len(stories))
-	for _, s := range stories {
+	c.specs = append(c.specs, specs...)
+	refs := make([]domain.Ref, 0, len(specs))
+	for _, s := range specs {
 		refs = append(refs, domain.Ref{Code: s.Code})
 	}
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.PlanInput) (domain.WriteResult, error) {
+func (c *Connector) SavePlan(ctx context.Context, specRef string, plan domain.PlanInput) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	code := c.codeFor(storyRef)
+	code := c.codeFor(specRef)
 	if code == "" {
 		return domain.WriteResult{}, iox.NewPrecondition(
-			fmt.Sprintf("story %s not found", storyRef), "", nil)
+			fmt.Sprintf("spec %s not found", specRef), "", nil)
 	}
 	c.plans[code] = plan.PlanBody
 	tasks := append([]domain.Task(nil), plan.Tasks...)
@@ -193,17 +193,17 @@ func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.P
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) TransitionStatus(ctx context.Context, storyRef string, newStatus domain.Status) (domain.WriteResult, error) {
+func (c *Connector) TransitionStatus(ctx context.Context, specRef string, newStatus domain.Status) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for i := range c.stories {
-		if c.stories[i].Code == storyRef || c.stories[i].Ref == storyRef {
-			c.stories[i].Status = newStatus
-			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: c.stories[i].Code}}}, nil
+	for i := range c.specs {
+		if c.specs[i].Code == specRef || c.specs[i].Ref == specRef {
+			c.specs[i].Status = newStatus
+			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: c.specs[i].Code}}}, nil
 		}
 	}
 	return domain.WriteResult{}, iox.NewPrecondition(
-		fmt.Sprintf("story %s not found", storyRef), "", nil)
+		fmt.Sprintf("spec %s not found", specRef), "", nil)
 }
 
 func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string) (domain.WriteResult, error) {
@@ -226,7 +226,7 @@ func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string)
 		fmt.Sprintf("task %s not found in %s", taskRef, parentRef), "", nil)
 }
 
-func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
+func (c *Connector) MoveBoardCard(ctx context.Context, specRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	targetStatus, ok := map[string]domain.Status{
@@ -239,89 +239,89 @@ func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn st
 	if !ok {
 		return domain.WriteResult{}, iox.NewInvalidInput(fmt.Sprintf("unknown board column %q", targetColumn), "", nil)
 	}
-	for i := range c.stories {
-		if c.stories[i].Code == storyRef || c.stories[i].Ref == storyRef {
-			c.stories[i].Status = targetStatus
-			story := c.stories[i]
-			c.stories = append(c.stories[:i], c.stories[i+1:]...)
-			insertAt := len(c.stories)
+	for i := range c.specs {
+		if c.specs[i].Code == specRef || c.specs[i].Ref == specRef {
+			c.specs[i].Status = targetStatus
+			spec := c.specs[i]
+			c.specs = append(c.specs[:i], c.specs[i+1:]...)
+			insertAt := len(c.specs)
 			switch {
 			case anchor.Before != "" && anchor.After != "":
 				return domain.WriteResult{}, iox.NewInvalidInput("before and after are mutually exclusive", "", nil)
 			case anchor.Before != "":
 				insertAt = -1
-				for j := range c.stories {
-					if c.stories[j].Code == anchor.Before {
+				for j := range c.specs {
+					if c.specs[j].Code == anchor.Before {
 						insertAt = j
 						break
 					}
 				}
 				if insertAt == -1 {
-					return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", anchor.Before), "", nil)
+					return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", anchor.Before), "", nil)
 				}
 			case anchor.After != "":
 				insertAt = -1
-				for j := range c.stories {
-					if c.stories[j].Code == anchor.After {
+				for j := range c.specs {
+					if c.specs[j].Code == anchor.After {
 						insertAt = j + 1
 						break
 					}
 				}
 				if insertAt == -1 {
-					return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", anchor.After), "", nil)
+					return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", anchor.After), "", nil)
 				}
 			}
-			c.stories = append(c.stories, domain.Story{})
-			copy(c.stories[insertAt+1:], c.stories[insertAt:])
-			c.stories[insertAt] = story
-			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: story.Code}}}, nil
+			c.specs = append(c.specs, domain.Spec{})
+			copy(c.specs[insertAt+1:], c.specs[insertAt:])
+			c.specs[insertAt] = spec
+			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: spec.Code}}}, nil
 		}
 	}
-	return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
+	return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", specRef), "", nil)
 }
 
-func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (domain.WriteResult, error) {
+func (c *Connector) PostComment(ctx context.Context, specRef, body string) (domain.WriteResult, error) {
 	// In-memory connector: silent ok, like filefs no-op.
 	return domain.WriteResult{OK: true}, nil
 }
 
-func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain.SpecUpdate) (domain.WriteResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for i := range c.stories {
-		if c.stories[i].Code == storyRef || c.stories[i].Ref == storyRef {
+	for i := range c.specs {
+		if c.specs[i].Code == specRef || c.specs[i].Ref == specRef {
 			if patch.Title != nil {
-				c.stories[i].Title = *patch.Title
+				c.specs[i].Title = *patch.Title
 			}
 			if patch.Priority != nil {
-				c.stories[i].Priority = *patch.Priority
+				c.specs[i].Priority = *patch.Priority
 			}
-			if patch.StoryPoints != nil {
-				c.stories[i].StoryPoints = *patch.StoryPoints
+			if patch.Points != nil {
+				c.specs[i].Points = *patch.Points
 			}
 			if patch.Scope != nil {
-				c.stories[i].Scope = *patch.Scope
+				c.specs[i].Scope = *patch.Scope
 			}
 			if patch.BlockedBy != nil {
-				c.stories[i].BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
+				c.specs[i].BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
 			}
 			if patch.Body != nil {
-				c.stories[i].Body = *patch.Body
+				c.specs[i].Body = *patch.Body
 			}
 			if patch.Epic != nil {
-				c.stories[i].Epic = *patch.Epic
+				c.specs[i].Epic = *patch.Epic
 			}
-			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: c.stories[i].Code}}}, nil
+			return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: c.specs[i].Code}}}, nil
 		}
 	}
 	return domain.WriteResult{}, iox.NewPrecondition(
-		fmt.Sprintf("story %s not found", storyRef), "", nil)
+		fmt.Sprintf("spec %s not found", specRef), "", nil)
 }
 
-// codeFor resolves a ref (code or numeric ref) into the story code. Empty
+// codeFor resolves a ref (code or numeric ref) into the spec code. Empty
 // when the ref is unknown.
 func (c *Connector) codeFor(ref string) string {
-	for _, s := range c.stories {
+	for _, s := range c.specs {
 		if s.Code == ref || s.Ref == ref {
 			return s.Code
 		}

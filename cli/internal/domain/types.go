@@ -1,10 +1,10 @@
 // Package domain defines the canonical data types exchanged between the CLI
 // surface, the connector interface, and the two connector implementations
-// (filefs, github). Types are connector-agnostic: a Story is a Story whether
+// (filefs, github). Types are connector-agnostic: a Spec is a Spec whether
 // it lives in BACKLOG.md or as a GitHub issue.
 package domain
 
-// Priority of a story. Stable string set so the JSON output is deterministic.
+// Priority of a spec. Stable string set so the JSON output is deterministic.
 type Priority string
 
 const (
@@ -13,7 +13,7 @@ const (
 	PriorityLow    Priority = "LOW"
 )
 
-// Status is the workflow status of a story or task. Strings come from the
+// Status is the workflow status of a spec or task. Strings come from the
 // `workflow.statuses` map in .archetipo/config.yaml; the canonical set is the
 // one built into the CLI defaults.
 type Status string
@@ -26,7 +26,7 @@ const (
 	StatusDone       Status = "DONE"
 )
 
-// Scope of a story (MVP, post-MVP, etc.). Free-form string.
+// Scope of a spec (MVP, post-MVP, etc.). Free-form string.
 type Scope string
 
 // TaskType distinguishes implementation tasks from test tasks.
@@ -37,37 +37,39 @@ const (
 	TaskTest TaskType = "Test"
 )
 
-// Epic identifies a group of stories. Code looks like "EP-001"; Title is
+// Epic identifies a group of specs. Code looks like "EP-001"; Title is
 // the human-readable name.
 type Epic struct {
 	Code  string `json:"code" yaml:"code"`
 	Title string `json:"title" yaml:"title"`
 }
 
-// Story is the unit of work in the backlog.
+// Spec is the unit of work in the backlog. Its body follows the user-story
+// agile format ("As [persona] I want [action] so that [benefit]"), but the
+// container itself is a Spec.
 //
 // Code, Title and Epic are always populated. Status defaults to TODO when
 // the connector cannot determine it.
-type Story struct {
-	Code        string   `json:"code" yaml:"code"`
-	Title       string   `json:"title" yaml:"title"`
-	Epic        Epic     `json:"epic" yaml:"epic"`
-	Priority    Priority `json:"priority" yaml:"priority"`
-	StoryPoints int      `json:"story_points" yaml:"story_points"`
-	Status      Status   `json:"status" yaml:"status"`
-	BlockedBy   []string `json:"blocked_by,omitempty" yaml:"blocked_by,omitempty"`
-	Scope       Scope    `json:"scope,omitempty" yaml:"scope,omitempty"`
-	// Body is the full markdown body of the story (acceptance criteria,
-	// description, demonstrates, scope). Connectors fill it for read_story_detail.
+type Spec struct {
+	Code      string   `json:"code" yaml:"code"`
+	Title     string   `json:"title" yaml:"title"`
+	Epic      Epic     `json:"epic" yaml:"epic"`
+	Priority  Priority `json:"priority" yaml:"priority"`
+	Points    int      `json:"points" yaml:"points"`
+	Status    Status   `json:"status" yaml:"status"`
+	BlockedBy []string `json:"blocked_by,omitempty" yaml:"blocked_by,omitempty"`
+	Scope     Scope    `json:"scope,omitempty" yaml:"scope,omitempty"`
+	// Body is the full markdown body of the spec (acceptance criteria,
+	// description, demonstrates, scope). Connectors fill it for read_spec_detail.
 	Body string `json:"body,omitempty" yaml:"body,omitempty"`
-	// Ref is a connector-local identifier (issue number for github, story
+	// Ref is a connector-local identifier (issue number for github, spec
 	// code for filefs). Always set together with Code.
 	Ref string `json:"ref,omitempty" yaml:"ref,omitempty"`
 	// URL is set by connectors that have a web location (github).
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
 }
 
-// Task is a unit of work inside a Story's implementation plan.
+// Task is a unit of work inside a Spec's implementation plan.
 type Task struct {
 	ID           string   `json:"id" yaml:"id"`
 	Title        string   `json:"title" yaml:"title"`
@@ -75,7 +77,7 @@ type Task struct {
 	Type         TaskType `json:"type" yaml:"type"`
 	Status       Status   `json:"status" yaml:"status"`
 	Dependencies []string `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	// Body is the full markdown body of the task (filled by read_story_tasks
+	// Body is the full markdown body of the task (filled by read_spec_tasks
 	// when the connector exposes one). May be empty for the file connector.
 	Body string `json:"body,omitempty" yaml:"body,omitempty"`
 	// Ref is a connector-local identifier (sub-issue number for github,
@@ -134,14 +136,16 @@ type ProjectInfo struct {
 }
 
 // ProjectFields holds the IDs of project custom fields and their option IDs.
+// PointsFieldID stores the GitHub Projects custom field whose user-visible
+// label remains "Story Points" — only the Go-side identifier is renamed.
 type ProjectFields struct {
-	StatusFieldID      string            `json:"status_field_id,omitempty" yaml:"status_field_id,omitempty"`
-	StatusOptions      map[string]string `json:"status_options,omitempty" yaml:"status_options,omitempty"`
-	PriorityFieldID    string            `json:"priority_field_id,omitempty" yaml:"priority_field_id,omitempty"`
-	PriorityOptions    map[string]string `json:"priority_options,omitempty" yaml:"priority_options,omitempty"`
-	StoryPointsFieldID string            `json:"story_points_field_id,omitempty" yaml:"story_points_field_id,omitempty"`
-	EpicFieldID        string            `json:"epic_field_id,omitempty" yaml:"epic_field_id,omitempty"`
-	EpicOptions        map[string]string `json:"epic_options,omitempty" yaml:"epic_options,omitempty"`
+	StatusFieldID   string            `json:"status_field_id,omitempty" yaml:"status_field_id,omitempty"`
+	StatusOptions   map[string]string `json:"status_options,omitempty" yaml:"status_options,omitempty"`
+	PriorityFieldID string            `json:"priority_field_id,omitempty" yaml:"priority_field_id,omitempty"`
+	PriorityOptions map[string]string `json:"priority_options,omitempty" yaml:"priority_options,omitempty"`
+	PointsFieldID   string            `json:"points_field_id,omitempty" yaml:"points_field_id,omitempty"`
+	EpicFieldID     string            `json:"epic_field_id,omitempty" yaml:"epic_field_id,omitempty"`
+	EpicOptions     map[string]string `json:"epic_options,omitempty" yaml:"epic_options,omitempty"`
 }
 
 // BacklogSummary is the output of read_existing_backlog: the data a skill
@@ -167,7 +171,7 @@ type Ref struct {
 //
 // Skipped lists the codes that the CLI intentionally did not write because
 // they would conflict with existing artifacts (e.g. `archetipo spec add`
-// idempotently skips stories whose code is already present in the backlog).
+// idempotently skips specs whose code is already present in the backlog).
 type WriteResult struct {
 	OK      bool     `json:"ok" yaml:"ok"`
 	Refs    []Ref    `json:"refs,omitempty" yaml:"refs,omitempty"`
@@ -180,10 +184,10 @@ type PlanInput struct {
 	Tasks    []Task `json:"tasks" yaml:"tasks"`
 }
 
-// SelectQuery captures the inputs of select_story.
+// SelectQuery captures the inputs of select_spec.
 type SelectQuery struct {
-	StoryCode        string   // empty => auto-select
-	EligibleStatuses []Status // required for auto-select; ignored when StoryCode is set
+	SpecCode         string   // empty => auto-select
+	EligibleStatuses []Status // required for auto-select; ignored when SpecCode is set
 }
 
 // ReorderAnchor captures a relative move request. Exactly one of Before/After
@@ -196,23 +200,23 @@ type ReorderAnchor struct {
 // MockupEntry describes a single mockup folder (one per design artifact)
 // served by the viewer. Name is the folder name under paths.mockups; URL is
 // the path the SPA can link to (served by the viewer's static handler).
-// StoryCode is non-empty when Name matches a story/epic code (US-NNN, EP-NNN).
+// SpecCode is non-empty when Name matches a spec/epic code (US-NNN, EP-NNN).
 type MockupEntry struct {
-	Name      string `json:"name"`
-	URL       string `json:"url"`
-	StoryCode string `json:"story_code,omitempty"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	SpecCode string `json:"spec_code,omitempty"`
 }
 
-// StoryUpdate is a partial patch over an existing Story. Pointer fields
+// SpecUpdate is a partial patch over an existing Spec. Pointer fields
 // distinguish "not provided" (nil) from "set to zero value" (non-nil pointing
 // at the zero value). Connectors must only touch fields whose pointer is
 // non-nil and leave the rest untouched.
-type StoryUpdate struct {
-	Title       *string   `json:"title,omitempty"`
-	Priority    *Priority `json:"priority,omitempty"`
-	StoryPoints *int      `json:"story_points,omitempty"`
-	Scope       *Scope    `json:"scope,omitempty"`
-	BlockedBy   *[]string `json:"blocked_by,omitempty"`
-	Body        *string   `json:"body,omitempty"`
-	Epic        *Epic     `json:"epic,omitempty"`
+type SpecUpdate struct {
+	Title     *string   `json:"title,omitempty"`
+	Priority  *Priority `json:"priority,omitempty"`
+	Points    *int      `json:"points,omitempty"`
+	Scope     *Scope    `json:"scope,omitempty"`
+	BlockedBy *[]string `json:"blocked_by,omitempty"`
+	Body      *string   `json:"body,omitempty"`
+	Epic      *Epic     `json:"epic,omitempty"`
 }

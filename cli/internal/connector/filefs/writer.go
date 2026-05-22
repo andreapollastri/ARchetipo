@@ -8,7 +8,7 @@ import (
 )
 
 // renderBacklog produces the canonical BACKLOG.md content for the given
-// stories. Output is byte-deterministic: same input => same bytes.
+// specs. Output is byte-deterministic: same input => same bytes.
 //
 // Layout:
 //
@@ -17,34 +17,34 @@ import (
 //	# Backlog
 //
 //	#### US-001: <Title>
-//	<!-- archetipo:story ... -->
+//	<!-- archetipo:spec ... -->
 //	<body provided by the skill>
 //
 //	#### US-002: <Title>
 //	...
 //
-// The skill is responsible for body content (Story / Demonstrates /
+// The skill is responsible for body content (user story / Demonstrates /
 // Acceptance Criteria / Epic prose / etc.) and for any human-language summary
 // at the top — this writer only emits the structural skeleton.
-func renderBacklog(stories []domain.Story) string {
+func renderBacklog(specs []domain.Spec) string {
 	var b strings.Builder
 	b.WriteString(backlogMarker())
 	b.WriteString("\n\n# Backlog\n\n")
-	for i, s := range stories {
-		b.WriteString(renderStoryBlock(s))
-		if i != len(stories)-1 {
+	for i, s := range specs {
+		b.WriteString(renderSpecBlock(s))
+		if i != len(specs)-1 {
 			b.WriteString("\n")
 		}
 	}
 	return b.String()
 }
 
-// renderStoryBlock writes a single story block ending with a single trailing
+// renderSpecBlock writes a single spec block ending with a single trailing
 // newline.
-func renderStoryBlock(s domain.Story) string {
+func renderSpecBlock(s domain.Spec) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "#### %s: %s\n", s.Code, s.Title)
-	b.WriteString(storyMarker(s))
+	b.WriteString(specMarker(s))
 	b.WriteByte('\n')
 	if body := strings.TrimSpace(s.Body); body != "" {
 		b.WriteByte('\n')
@@ -58,7 +58,7 @@ func renderStoryBlock(s domain.Story) string {
 //
 // Layout:
 //
-//	<!-- archetipo:plan story=US-001 -->
+//	<!-- archetipo:plan spec=US-001 -->
 //
 //	<plan body provided by the skill — Soluzione Tecnica, Strategia di Test, ...>
 //
@@ -67,9 +67,9 @@ func renderStoryBlock(s domain.Story) string {
 //	|---|---|---|---|---|---|
 //	| TODO | TASK-01 | ... | ... | Impl | - |
 //	| TODO | TASK-02 | ... | ... | Test | TASK-01 |
-func renderPlan(storyCode string, plan domain.PlanInput) string {
+func renderPlan(specCode string, plan domain.PlanInput) string {
 	var b strings.Builder
-	b.WriteString(planMarker(storyCode))
+	b.WriteString(planMarker(specCode))
 	b.WriteString("\n\n")
 	if body := strings.TrimSpace(plan.PlanBody); body != "" {
 		b.WriteString(body)

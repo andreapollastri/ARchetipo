@@ -1,13 +1,13 @@
 ---
 name: archetipo-implement
-description: Implements a planned user story by executing its technical implementation plan. Selects a PLANNED story (passed as argument or auto-selected by priority), loads its implementation plan, and orchestrates Ugo, Mina, and Cesare to write code, tests, validation, and code review. The connector (configured in .archetipo/config.yaml) determines where stories and plans are read from and where status updates are written. Use this skill whenever the user wants to implement a story that is already planned and ready for development, start coding a planned backlog item, or execute a sprint task from backlog. Do not use it for discovery, backlog creation, or planning work when the story or implementation plan does not yet exist.
+description: Implements a planned spec by executing its technical implementation plan. Selects a PLANNED spec (passed as argument or auto-selected by priority), loads its implementation plan, and orchestrates Ugo, Mina, and Cesare to write code, tests, validation, and code review. The connector (configured in .archetipo/config.yaml) determines where specs and plans are read from and where status updates are written. Use this skill whenever the user wants to implement a spec that is already planned and ready for development, start coding a planned backlog item, or execute a sprint task from backlog. Do not use it for discovery, backlog creation, or planning work when the spec or implementation plan does not yet exist.
 ---
 
-# ARchetipo - User Story Implementation Skill
+# ARchetipo - Spec Implementation Skill
 
-You facilitate a **user story implementation** session with a virtual delivery team. Your goal is to implement the planned story, add the necessary tests, pass code review, and move the story to review while following the existing implementation plan.
+You facilitate a **spec implementation** session with a virtual delivery team. Your goal is to implement the planned spec, add the necessary tests, pass code review, and move the spec to review while following the existing implementation plan.
 
-The implementation plan is loaded via a single CLI call: `archetipo spec show {US-CODE}` returns both the story body and the task list in one envelope (`data.story`, `data.tasks`).
+The implementation plan is loaded via a single CLI call: `archetipo spec show {US-CODE}` returns both the spec body (a user story) and the task list in one envelope (`data.spec`, `data.tasks`).
 
 ## Shared Runtime
 
@@ -32,25 +32,25 @@ This section has priority over every other section in the skill.
 3. **Concurrency is conditional.** Run multiple workers concurrently only when tasks in the same wave are truly independent.
 4. **In-context fallback is non-blocking.** If workers are unavailable, unreliable, or not worth the overhead, execute the same pipeline in the current context. Lack of worker support is not an error and not a reason to stop.
 5. **Stop only for explicit blockers.** Do not invent new reasons to ask the user.
-6. **Connector operations are exposed by the CLI.** Every operation is a sub-command of `archetipo`. This skill uses `init`, `story show`, `story start`, `task done`, and `story review`. Parse stdout/stderr as the shared JSON envelopes and branch on `error.code`. Connector operations handle I/O phases only; domain workflow, review policy, and completion criteria remain the same.
+6. **Connector operations are exposed by the CLI.** Every operation is a sub-command of `archetipo`. This skill uses `init`, `spec show`, `spec start`, `task done`, and `spec review`. Parse stdout/stderr as the shared JSON envelopes and branch on `error.code`. Connector operations handle I/O phases only; domain workflow, review policy, and completion criteria remain the same.
 
 ## Autonomy Policy
 
 Stop and ask the user only when one of these is true:
 - The implementation plan conflicts with the current codebase in a way that cannot be adapted locally without changing the intended solution
-- The story depends on another unimplemented story or prerequisite outside the current story scope
+- The spec depends on another unimplemented spec or prerequisite outside the current spec scope
 - Existing tests must be changed **semantically** because the intended behavior or contract changes
 - A meaningful infrastructure choice is required and the repo plus plan do not provide enough signals to make it safely
-- Completing the task would change scope, acceptance criteria, or the user-facing contract of the story
+- Completing the task would change scope, acceptance criteria, or the user-facing contract of the spec
 
 Do **not** stop for these:
 - Local implementation adaptations that preserve the planned solution
-- Minor technical fixes, dependency wiring, or configuration cleanup inside the current story scope
+- Minor technical fixes, dependency wiring, or configuration cleanup inside the current spec scope
 - Surgical re-reads during debugging, review, or the fix loop
-- Mechanical updates to newly added tests in this story
+- Mechanical updates to newly added tests in this spec
 - Mechanical updates to existing tests that preserve the same asserted behavior
 
-If a situation is ambiguous, prefer continuing when the adaptation is local and reversible. Prefer asking only when the decision would redefine the story.
+If a situation is ambiguous, prefer continuing when the adaptation is local and reversible. Prefer asking only when the decision would redefine the spec.
 
 ## Execution Modes
 
@@ -84,29 +84,29 @@ Do not avoid worker-backed execution only because a wave must be scheduled seque
 - Never pre-read a file in the main context just to relay its content to a worker. Pass file paths and conventions instead.
 - Avoid re-reading full files when a diff or a surgical re-read is enough.
 - Read the backlog surgically rather than loading it in full.
-- Skip `{config.paths.prd}` unless the plan explicitly requires it or the story touches core architecture decisions not covered by the plan.
+- Skip `{config.paths.prd}` unless the plan explicitly requires it or the spec touches core architecture decisions not covered by the plan.
 - Before writing code, inspect the touched area for reusable helpers, components, and conventions.
 
 ## Workflow
 
 > The templates below are examples only — render them in the detected language (see Language Policy in `.archetipo/shared-runtime.md`).
 
-### PHASE 0 - Setup, Story Selection, and Plan Loading
+### PHASE 0 - Setup, Spec Selection, and Plan Loading
 
 1. Run `archetipo config show` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
-3. Load the story and its plan with a single CLI call:
+3. Load the spec and its plan with a single CLI call:
    - If a code was passed: `archetipo spec show {US-CODE}`
    - Otherwise: `archetipo spec next --status {config.workflow.statuses.planned}` (auto-pick first eligible by priority + code)
 
-   The envelope returns `data.story` (the full Story including `body`) and `data.tasks` (the implementation task list).
+   The envelope returns `data.spec` (the full Spec including `body`) and `data.tasks` (the implementation task list).
 
-   - If `error.code = E_PRECONDITION` (no eligible story or auto-pick on empty queue), stop and display the template from `./references/output-templates.md` ("No planned stories" / "No backlog" as appropriate).
-   - If `data.tasks` is empty, the story has no plan yet — stop and display the template from `./references/output-templates.md` ("No implementation plan" error message).
+   - If `error.code = E_PRECONDITION` (no eligible spec or auto-pick on empty queue), stop and display the template from `./references/output-templates.md` ("No planned specs" / "No backlog" as appropriate).
+   - If `data.tasks` is empty, the spec has no plan yet — stop and display the template from `./references/output-templates.md` ("No implementation plan" error message).
 
 4. Load the relevant project context: agent instructions (CLAUDE.md, AGENTS.md), project config, conventions, and existing patterns in the touched area.
 5. If the plan contains UI work, scan it for mockups or design references and search `{config.paths.mockups}` for matching files. Treat explicitly referenced mockups as the source of truth.
-6. Run `archetipo spec start {US-CODE}` to transition the story to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a story already `IN PROGRESS` is a safe no-op.
+6. Run `archetipo spec start {US-CODE}` to transition the spec to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a spec already `IN PROGRESS` is a safe no-op.
 7. Announce the session briefly using the template from `./references/output-templates.md` ("Session Announcement").
 
 ### Validation policy for task parsing
@@ -148,7 +148,7 @@ For each task:
 
 - Follow the planned technical solution
 - Reuse existing patterns for naming, folder structure, and architecture
-- Do not add scope beyond the story
+- Do not add scope beyond the spec
 - Verify directories exist before creating files
 - Prefer local adaptation over unnecessary escalation
 
@@ -161,7 +161,7 @@ For each task:
 
 #### Mina's test rules
 
-- Write tests that verify the story acceptance criteria
+- Write tests that verify the spec acceptance criteria
 - Follow the test strategy in the implementation plan
 - Reuse the project's existing testing patterns
 - Make tests independent and repeatable
@@ -187,32 +187,32 @@ Apply this section when the plan requires e2e coverage, or when Mina determines 
 
 **When to record a demo video**
 
-Demo videos are selective, not blanket. Recording every e2e test produces noise no one watches and drowns the real demo in artifacts. Record video only for the single demo scenario of stories where a video genuinely helps a human reviewer understand the delivered increment.
+Demo videos are selective, not blanket. Recording every e2e test produces noise no one watches and drowns the real demo in artifacts. Record video only for the single demo scenario of specs where a video genuinely helps a human reviewer understand the delivered increment.
 
-Decision rule — record a demo video for this story when **all** of the following hold:
-- The story has a `Demonstrates` field that describes a concrete, user-visible action (see the next subsection).
+Decision rule — record a demo video for this spec when **all** of the following hold:
+- The spec has a `Demonstrates` field that describes a concrete, user-visible action (see the next subsection).
 - The increment is observable through the UI or a user-facing artifact (a downloaded file, a received email preview, a visible state change). A pure API change, schema migration, refactor, infra wiring, or config tweak does not qualify.
 - A non-technical reviewer (PM, stakeholder, new teammate) would plausibly gain understanding from watching it.
 
-Skip the demo video when the story is purely technical (refactor, dependency upgrade, internal service extraction, build tooling), when there is no user-visible surface, or when `Demonstrates` is missing or unfilmable. Skipping is a normal outcome, not a failure — note it briefly in the completion summary ("No demo video: technical story, no user-visible surface").
+Skip the demo video when the spec is purely technical (refactor, dependency upgrade, internal service extraction, build tooling), when there is no user-visible surface, or when `Demonstrates` is missing or unfilmable. Skipping is a normal outcome, not a failure — note it briefly in the completion summary ("No demo video: technical spec, no user-visible surface").
 
 Skipping the demo video does not remove the obligation to write e2e tests when the plan requires them. E2E coverage and video recording are independent decisions: e2e tests can run without producing videos.
 
 **Demo scenario from Demonstrates**
 
-When the decision rule above says a video is warranted, the story's `Demonstrates` line is the contract for what that video must show. Treat it as the script, not as decoration.
+When the decision rule above says a video is warranted, the spec's `Demonstrates` line is the contract for what that video must show. Treat it as the script, not as decoration.
 
-- Read the `Demonstrates` field from `data.story.body` returned by `archetipo spec show {US-CODE}`.
-- Produce exactly one **demo** e2e scenario that reproduces the Demonstrates flow end to end, from a clean starting state to the visible increment the story promises. Name the test file or the test case after the Demonstrates outcome so it is obvious when the artifact is browsed later (e.g. `demo__user-exports-monthly-report.spec.ts`).
+- Read the `Demonstrates` field from `data.spec.body` returned by `archetipo spec show {US-CODE}`.
+- Produce exactly one **demo** e2e scenario that reproduces the Demonstrates flow end to end, from a clean starting state to the visible increment the spec promises. Name the test file or the test case after the Demonstrates outcome so it is obvious when the artifact is browsed later (e.g. `demo__user-exports-monthly-report.spec.ts`).
 - The demo scenario must include: an initial state that makes the change observable (empty list, logged-out shell, etc.), the user actions described in `Demonstrates`, and a final assertion on the user-visible increment (the new row, the redirected page, the downloaded file, the updated badge).
-- Edge cases, error paths, and validation stay in separate e2e files and are **not** recorded. Do not bloat the demo test with them; they pollute the video and obscure the story outcome.
-- If `Demonstrates` is vague or not filmable (e.g. "user can manage data effectively"), do not invent a flow. Surface it as a planning gap: either ask the user to refine the story, or record no demo video and explain why in the completion summary.
+- Edge cases, error paths, and validation stay in separate e2e files and are **not** recorded. Do not bloat the demo test with them; they pollute the video and obscure the spec outcome.
+- If `Demonstrates` is vague or not filmable (e.g. "user can manage data effectively"), do not invent a flow. Surface it as a planning gap: either ask the user to refine the spec, or record no demo video and explain why in the completion summary.
 
 **Video pacing and readability**
 
 When a demo video is recorded, it must be watchable by a non-technical reviewer. A correct test that produces an unreadable video fails this policy.
 
-The goal: a human viewer should be able to follow each step and see the final result without pausing or rewinding. Tests that race through the UI in two seconds do not prove the story to the stakeholder, even when they pass.
+The goal: a human viewer should be able to follow each step and see the final result without pausing or rewinding. Tests that race through the UI in two seconds do not prove the spec to the stakeholder, even when they pass.
 
 Apply these rules **only to the demo scenario**; other e2e tests stay fast and unrecorded:
 
@@ -227,7 +227,7 @@ Apply these rules **only to the demo scenario**; other e2e tests stay fast and u
 - Detect the e2e run command and any required dev-server command from project conventions
 - Start background services only when needed and wait for readiness
 - Run the suite and verify that the expected artifacts are actually produced
-- When a demo video is recorded, store it under `{config.paths.test_results}/{story-id}/` (or document the framework-native artifact path in the final summary) and confirm it is present and playable before completing the story
+- When a demo video is recorded, store it under `{config.paths.test_results}/{spec-id}/` (or document the framework-native artifact path in the final summary) and confirm it is present and playable before completing the spec
 - Do not generate videos for non-demo e2e tests; if the framework default is `video: 'on'`, scope it down so only the demo scenario records
 - Retry flaky or timeout-based failures once; if they fail again, report them clearly as non-transient
 
@@ -239,7 +239,7 @@ After each wave, report briefly. See `./references/output-templates.md` for the 
 
 After all implementation waves:
 1. Run the project's unit and integration tests
-2. Run e2e tests if this story required or introduced them
+2. Run e2e tests if this spec required or introduced them
 3. If tests fail, determine whether the failure is new or pre-existing, fix local issues autonomously, and escalate only if an explicit blocker appears
 
 ### PHASE 3 - Code Review
@@ -281,16 +281,16 @@ If Cesare found no issues, or all critical issues are fixed, proceed to completi
 Proceed to Phase 5 only when all of the following are true:
 - no `🔴 CRITICAL` findings remain open
 - the full required final test suite passes
-- the story can be moved to `{config.workflow.statuses.review}` via `archetipo spec review`
+- the spec can be moved to `{config.workflow.statuses.review}` via `archetipo spec review`
 
 `🟡 IMPROVEMENT` findings do not block completion by default.
-Implementation is not complete until the story status has been updated to `{config.workflow.statuses.review}`.
-Do not end with the story still in `{config.workflow.statuses.in_progress}`, and do not move it to `{config.workflow.statuses.done}` from this skill.
+Implementation is not complete until the spec status has been updated to `{config.workflow.statuses.review}`.
+Do not end with the spec still in `{config.workflow.statuses.in_progress}`, and do not move it to `{config.workflow.statuses.done}` from this skill.
 
 ### PHASE 5 - Completion & Backlog Update
 
-1. Run the full required test suite one final time. If it fails, return to the fix loop and do not transition the story.
-2. Pipe the completion summary markdown into `archetipo spec review {US-CODE}`. This single command transitions the story to `{config.workflow.statuses.review}` AND posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
+1. Run the full required test suite one final time. If it fails, return to the fix loop and do not transition the spec.
+2. Pipe the completion summary markdown into `archetipo spec review {US-CODE}`. This single command transitions the spec to `{config.workflow.statuses.review}` AND posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
 3. Confirm completion with a concise summary. See `references/output-templates.md` for the "Completion Summary" template. If non-blocking `🟡 IMPROVEMENT` items remain open, include them in the final report under an explicit optional improvements section.
 
 ## Edge Case Handling

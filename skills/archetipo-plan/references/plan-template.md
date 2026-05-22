@@ -6,7 +6,7 @@
 ---
 
 ```markdown
-# {US-CODE}: {Story Title} — Implementation Plan
+# {US-CODE}: {Spec Title} — Implementation Plan
 
 > Render all section headers in the detected language.
 
@@ -15,13 +15,13 @@
 
 ---
 
-## User Story
+## Spec
 
 **Epic:** {EPIC_CODE} — {Epic Title}
-**Priority:** {PRIORITY} | **Story Points:** {STORY_POINTS}
+**Priority:** {PRIORITY} | **Points:** {POINTS}
 
-**Story**
-{STORY_TEXT}
+**User Story**
+{SPEC_TEXT}
 
 **Acceptance Criteria**
 {ACCEPTANCE_CRITERIA}
@@ -61,7 +61,7 @@
 ---
 
 {IF_MOCKUP_GENERATED}
-> 🎨 Mockups for this story are available in `{config.paths.mockups}/{US-CODE}/`
+> 🎨 Mockups for this spec are available in `{config.paths.mockups}/{US-CODE}/`
 {/IF_MOCKUP_GENERATED}
 
 _Plan generated via ARchetipo Planning — {DATE}_
@@ -75,6 +75,6 @@ _Plan generated via ARchetipo Planning — {DATE}_
 > - Task format: sequential ID (TASK-01, TASK-02...), action-oriented title, brief description (1-2 sentences), type (Impl/Test), dependencies
 > - Implementation order: follow the project's natural dependency chain — lower layers first, tests interleaved (not all at end)
 > - Frontend tasks when mockups exist: If `mockup_generated = true`, include at least one frontend implementation task (type: Impl) that explicitly references the mockups directory `{config.paths.mockups}/{US-CODE}/`. Omitting frontend tasks when `mockup_generated = true` is a plan error — do not proceed without them.
-> - Task dependencies must only reference tasks within the same story plan. Cross-story task dependencies are not supported — use story-level `Blocked by` for cross-story sequencing
-> - If the `Blocked by` field is absent from the story (older backlogs), treat it as `-` (no dependencies)
-> - If total tasks exceed 15, suggest splitting into sub-stories
+> - Task dependencies must only reference tasks within the same spec plan. Cross-spec task dependencies are not supported — use spec-level `Blocked by` for cross-spec sequencing
+> - If the `Blocked by` field is absent from the spec (older backlogs), treat it as `-` (no dependencies)
+> - If total tasks exceed 15, suggest splitting into sub-specs

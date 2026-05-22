@@ -13,7 +13,7 @@ workflow:
     planned: PLANNED
     in_progress: IN PROGRESS
     review: REVIEW
-    done: DONE        # transition to DONE is manual — no skill moves a story to this status automatically
+    done: DONE        # transition to DONE is manual — no skill moves a spec to this status automatically
 
 #only valid for github connector
 github:

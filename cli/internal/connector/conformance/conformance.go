@@ -8,7 +8,7 @@
 // sequence, mirroring a realistic skill workflow:
 //
 //	init -> save_initial_backlog -> list -> select -> save_plan -> read_tasks ->
-//	transition_status -> complete_task -> append_stories -> read_existing -> post_comment
+//	transition_status -> complete_task -> append_specs -> read_existing -> post_comment
 package conformance
 
 import (
@@ -31,7 +31,7 @@ func Run(t *testing.T, newConn Factory) {
 	t.Run("InitializeConnector", func(t *testing.T) { testInitialize(t, newConn(t)) })
 	t.Run("BacklogLifecycle", func(t *testing.T) { testBacklogLifecycle(t, newConn(t)) })
 	t.Run("PlanLifecycle", func(t *testing.T) { testPlanLifecycle(t, newConn(t)) })
-	t.Run("AppendStories", func(t *testing.T) { testAppendStories(t, newConn(t)) })
+	t.Run("AppendSpecs", func(t *testing.T) { testAppendSpecs(t, newConn(t)) })
 	t.Run("PostCommentNoOpAllowed", func(t *testing.T) { testPostComment(t, newConn(t)) })
 }
 
@@ -50,27 +50,27 @@ func testInitialize(t *testing.T, c connector.Connector) {
 
 func testBacklogLifecycle(t *testing.T, c connector.Connector) {
 	ctx := context.Background()
-	stories := sampleStories()
-	if _, err := c.SaveInitialBacklog(ctx, stories); err != nil {
+	specs := sampleSpecs()
+	if _, err := c.SaveInitialBacklog(ctx, specs); err != nil {
 		t.Fatal(err)
 	}
 	all, err := c.FetchBacklogItems(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != len(stories) {
-		t.Fatalf("expected %d stories, got %d", len(stories), len(all))
+	if len(all) != len(specs) {
+		t.Fatalf("expected %d specs, got %d", len(specs), len(all))
 	}
 	// Filter by status: only TODO are present at this stage.
 	todos, err := c.FetchBacklogItems(ctx, domain.StatusTodo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(todos) != len(stories) {
-		t.Errorf("expected all stories TODO, got %d", len(todos))
+	if len(todos) != len(specs) {
+		t.Errorf("expected all specs TODO, got %d", len(todos))
 	}
 	// Auto-select picks the highest priority (US-001 HIGH).
-	selected, err := c.SelectStory(ctx, domain.SelectQuery{
+	selected, err := c.SelectSpec(ctx, domain.SelectQuery{
 		EligibleStatuses: []domain.Status{domain.StatusTodo},
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func testBacklogLifecycle(t *testing.T, c connector.Connector) {
 		t.Errorf("auto-select expected US-001, got %s", selected.Code)
 	}
 	// Targeted select.
-	got, err := c.SelectStory(ctx, domain.SelectQuery{StoryCode: "US-002"})
+	got, err := c.SelectSpec(ctx, domain.SelectQuery{SpecCode: "US-002"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func testBacklogLifecycle(t *testing.T, c connector.Connector) {
 		t.Errorf("expected US-002, got %s", got.Code)
 	}
 	// Detail.
-	det, err := c.ReadStoryDetail(ctx, "US-001")
+	det, err := c.ReadSpecDetail(ctx, "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func testBacklogLifecycle(t *testing.T, c connector.Connector) {
 
 func testPlanLifecycle(t *testing.T, c connector.Connector) {
 	ctx := context.Background()
-	if _, err := c.SaveInitialBacklog(ctx, sampleStories()); err != nil {
+	if _, err := c.SaveInitialBacklog(ctx, sampleSpecs()); err != nil {
 		t.Fatal(err)
 	}
 	plan := domain.PlanInput{
@@ -123,7 +123,7 @@ func testPlanLifecycle(t *testing.T, c connector.Connector) {
 	if _, err := c.SavePlan(ctx, "US-001", plan); err != nil {
 		t.Fatal(err)
 	}
-	tasks, err := c.ReadStoryTasks(ctx, "US-001")
+	tasks, err := c.ReadSpecTasks(ctx, "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,27 +136,27 @@ func testPlanLifecycle(t *testing.T, c connector.Connector) {
 	if _, err := c.CompleteTask(ctx, "US-001", "TASK-01"); err != nil {
 		t.Fatal(err)
 	}
-	tasks, _ = c.ReadStoryTasks(ctx, "US-001")
+	tasks, _ = c.ReadSpecTasks(ctx, "US-001")
 	if tasks[0].Status != domain.StatusDone {
 		t.Errorf("expected TASK-01 DONE, got %s", tasks[0].Status)
 	}
 }
 
-func testAppendStories(t *testing.T, c connector.Connector) {
+func testAppendSpecs(t *testing.T, c connector.Connector) {
 	ctx := context.Background()
-	if _, err := c.SaveInitialBacklog(ctx, sampleStories()); err != nil {
+	if _, err := c.SaveInitialBacklog(ctx, sampleSpecs()); err != nil {
 		t.Fatal(err)
 	}
-	extra := []domain.Story{{
+	extra := []domain.Spec{{
 		Code: "US-100", Title: "New",
-		Epic: domain.Epic{Code: "EP-002", Title: "Other"}, Priority: domain.PriorityLow, StoryPoints: 1, Status: domain.StatusTodo,
-		Body: "## Story\n\nLater.",
+		Epic: domain.Epic{Code: "EP-002", Title: "Other"}, Priority: domain.PriorityLow, Points: 1, Status: domain.StatusTodo,
+		Body: "## Spec\n\nLater.",
 	}}
-	if _, err := c.AppendStories(ctx, extra); err != nil {
+	if _, err := c.AppendSpecs(ctx, extra); err != nil {
 		t.Fatal(err)
 	}
 	all, _ := c.FetchBacklogItems(ctx, "")
-	codes := storyCodes(all)
+	codes := specCodes(all)
 	sort.Strings(codes)
 	if !contains(codes, "US-100") {
 		t.Errorf("US-100 not appended: %v", codes)
@@ -175,7 +175,7 @@ func testAppendStories(t *testing.T, c connector.Connector) {
 
 func testPostComment(t *testing.T, c connector.Connector) {
 	ctx := context.Background()
-	if _, err := c.SaveInitialBacklog(ctx, sampleStories()); err != nil {
+	if _, err := c.SaveInitialBacklog(ctx, sampleSpecs()); err != nil {
 		t.Fatal(err)
 	}
 	res, err := c.PostComment(ctx, "US-001", "smoke")
@@ -189,22 +189,22 @@ func testPostComment(t *testing.T, c connector.Connector) {
 
 // helpers
 
-func sampleStories() []domain.Story {
-	return []domain.Story{
+func sampleSpecs() []domain.Spec {
+	return []domain.Spec{
 		{
 			Code: "US-001", Title: "Setup",
-			Epic: domain.Epic{Code: "EP-001", Title: "Foundations"}, Priority: domain.PriorityHigh, StoryPoints: 3, Status: domain.StatusTodo, Scope: "MVP",
-			Body: "## Story\n\nAs a user, I want X.",
+			Epic: domain.Epic{Code: "EP-001", Title: "Foundations"}, Priority: domain.PriorityHigh, Points: 3, Status: domain.StatusTodo, Scope: "MVP",
+			Body: "## Spec\n\nAs a user, I want X.",
 		},
 		{
 			Code: "US-002", Title: "Auth",
-			Epic: domain.Epic{Code: "EP-001", Title: "Foundations"}, Priority: domain.PriorityMedium, StoryPoints: 5, Status: domain.StatusTodo, BlockedBy: []string{"US-001"},
-			Body: "## Story\n\nLogin.",
+			Epic: domain.Epic{Code: "EP-001", Title: "Foundations"}, Priority: domain.PriorityMedium, Points: 5, Status: domain.StatusTodo, BlockedBy: []string{"US-001"},
+			Body: "## Spec\n\nLogin.",
 		},
 	}
 }
 
-func storyCodes(s []domain.Story) []string {
+func specCodes(s []domain.Spec) []string {
 	out := make([]string, len(s))
 	for i, x := range s {
 		out[i] = x.Code

@@ -28,7 +28,7 @@ func newViewCmd(s streams) *cobra.Command {
 backlog and, by default, opens it in the system browser.
 
 The view reads and writes the same files used by the file connector
-(.archetipo/backlog.yaml, .archetipo/stories/, .archetipo/plans/), so any
+(.archetipo/backlog.yaml, .archetipo/specs/, .archetipo/plans/), so any
 edits made in the browser persist immediately. The server binds to the
 loopback interface only; no authentication is performed.`,
 		Args: cobra.NoArgs,

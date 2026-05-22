@@ -11,9 +11,9 @@
 //
 // Recognized kinds:
 //
-//	story    fields of a backlog story (code, epic, priority, points, status, blocked_by, scope)
+//	spec     fields of a backlog spec (code, epic, priority, points, status, blocked_by, scope)
 //	backlog  preamble of BACKLOG.md (version)
-//	plan     preamble of planning/{US-CODE}.md (story)
+//	plan     preamble of planning/{US-CODE}.md (spec)
 //	tasks    sentinel marking the start of the Implementation Tasks table
 package filefs
 
@@ -93,13 +93,13 @@ func escapeAttr(v string) string {
 	return url.QueryEscape(v)
 }
 
-// storyMarker builds the marker line for a story.
-func storyMarker(s domain.Story) string {
+// specMarker builds the marker line for a spec.
+func specMarker(s domain.Spec) string {
 	attrs := map[string]string{
 		"code":     s.Code,
 		"epic":     s.Epic.Code,
 		"priority": string(s.Priority),
-		"points":   strconv.Itoa(s.StoryPoints),
+		"points":   strconv.Itoa(s.Points),
 		"status":   string(s.Status),
 	}
 	if len(s.BlockedBy) > 0 {
@@ -111,16 +111,16 @@ func storyMarker(s domain.Story) string {
 	if s.Scope != "" {
 		attrs["scope"] = string(s.Scope)
 	}
-	return formatMarker("story", attrs)
+	return formatMarker("spec", attrs)
 }
 
-// storyFromMarker reconstructs the structured fields of a story from a
+// specFromMarker reconstructs the structured fields of a spec from a
 // marker. The Title and Body are filled by the parser separately.
-func storyFromMarker(m marker) (domain.Story, error) {
-	if m.Kind != "story" {
-		return domain.Story{}, fmt.Errorf("expected kind=story, got %q", m.Kind)
+func specFromMarker(m marker) (domain.Spec, error) {
+	if m.Kind != "spec" {
+		return domain.Spec{}, fmt.Errorf("expected kind=spec, got %q", m.Kind)
 	}
-	s := domain.Story{
+	s := domain.Spec{
 		Code: m.Attrs["code"],
 		Epic: domain.Epic{
 			Code:  m.Attrs["epic"],
@@ -133,9 +133,9 @@ func storyFromMarker(m marker) (domain.Story, error) {
 	if v := m.Attrs["points"]; v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return domain.Story{}, fmt.Errorf("invalid points=%q: %w", v, err)
+			return domain.Spec{}, fmt.Errorf("invalid points=%q: %w", v, err)
 		}
-		s.StoryPoints = n
+		s.Points = n
 	}
 	if v := m.Attrs["blocked_by"]; v != "" {
 		s.BlockedBy = splitCSV(v)
@@ -144,8 +144,8 @@ func storyFromMarker(m marker) (domain.Story, error) {
 }
 
 // planMarker builds the preamble marker for a planning file.
-func planMarker(storyCode string) string {
-	return formatMarker("plan", map[string]string{"story": storyCode})
+func planMarker(specCode string) string {
+	return formatMarker("plan", map[string]string{"spec": specCode})
 }
 
 // backlogMarker builds the preamble marker for the backlog file.

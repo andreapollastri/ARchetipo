@@ -508,9 +508,17 @@ async function runReportedCommand({
   };
   report.events.push(event);
 
+  const binDir = cliBinaryPath ? path.dirname(cliBinaryPath) : null;
+  const env = {
+    ...process.env,
+    ...(cliEnv ?? {}),
+  };
+  if (binDir) {
+    env.PATH = `${binDir}${path.delimiter}${env.PATH || process.env.PATH}`;
+  }
   const child = spawn(command, args, {
     cwd: sandboxDir,
-    env: { ...process.env, ...(cliEnv ?? {}) },
+    env,
     stdio: ["ignore", "pipe", "pipe"],
     shell: process.platform === "win32",
   });

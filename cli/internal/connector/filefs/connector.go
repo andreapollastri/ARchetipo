@@ -34,9 +34,9 @@ func Register() {
 
 var errBacklogMissing = errors.New("backlog missing")
 
-// mockupStoryCodeRE matches mockup folder names that map 1:1 to a story or
-// epic code so the viewer can render a per-story link.
-var mockupStoryCodeRE = regexp.MustCompile(`^(US|EP)-\d+$`)
+// mockupSpecCodeRE matches mockup folder names that map 1:1 to a spec or
+// epic code so the viewer can render a per-spec link.
+var mockupSpecCodeRE = regexp.MustCompile(`^(US|EP)-\d+$`)
 
 func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, error) {
 	return domain.SetupInfo{
@@ -46,40 +46,40 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 	}, nil
 }
 
-func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Story, error) {
+func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Spec, error) {
 	store, err := c.loadStore()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.Story, 0, len(store.Stories))
+	out := make([]domain.Spec, 0, len(store.Specs))
 	for _, col := range c.boardColumns() {
 		for _, code := range store.Backlog.Orders.Board[col.ID] {
-			story, ok := store.Stories[code]
+			spec, ok := store.Specs[code]
 			if !ok {
 				continue
 			}
-			if statusFilter != "" && story.Status != statusFilter {
+			if statusFilter != "" && spec.Status != statusFilter {
 				continue
 			}
-			out = append(out, story)
+			out = append(out, spec)
 		}
 	}
 	return out, nil
 }
 
-func (c *Connector) SelectStory(ctx context.Context, q domain.SelectQuery) (domain.Story, error) {
-	stories, err := c.FetchBacklogItems(ctx, "")
+func (c *Connector) SelectSpec(ctx context.Context, q domain.SelectQuery) (domain.Spec, error) {
+	specs, err := c.FetchBacklogItems(ctx, "")
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	if q.StoryCode != "" {
-		for _, story := range stories {
-			if story.Code == q.StoryCode {
-				return story, nil
+	if q.SpecCode != "" {
+		for _, spec := range specs {
+			if spec.Code == q.SpecCode {
+				return spec, nil
 			}
 		}
-		return domain.Story{}, iox.NewPrecondition(
-			fmt.Sprintf("story %s not found in backlog", q.StoryCode),
+		return domain.Spec{}, iox.NewPrecondition(
+			fmt.Sprintf("spec %s not found in backlog", q.SpecCode),
 			"check the backlog or run `archetipo spec list`", nil,
 		)
 	}
@@ -87,15 +87,15 @@ func (c *Connector) SelectStory(ctx context.Context, q domain.SelectQuery) (doma
 	for _, status := range q.EligibleStatuses {
 		eligible[status] = struct{}{}
 	}
-	candidates := make([]domain.Story, 0, len(stories))
-	for _, story := range stories {
-		if _, ok := eligible[story.Status]; ok {
-			candidates = append(candidates, story)
+	candidates := make([]domain.Spec, 0, len(specs))
+	for _, spec := range specs {
+		if _, ok := eligible[spec.Status]; ok {
+			candidates = append(candidates, spec)
 		}
 	}
 	if len(candidates) == 0 {
-		return domain.Story{}, iox.NewPrecondition(
-			"no eligible stories in backlog",
+		return domain.Spec{}, iox.NewPrecondition(
+			"no eligible specs in backlog",
 			"check the backlog status distribution", nil,
 		)
 	}
@@ -103,19 +103,19 @@ func (c *Connector) SelectStory(ctx context.Context, q domain.SelectQuery) (doma
 	return candidates[0], nil
 }
 
-func (c *Connector) ReadStoryDetail(ctx context.Context, ref string) (domain.Story, error) {
+func (c *Connector) ReadSpecDetail(ctx context.Context, ref string) (domain.Spec, error) {
 	store, err := c.loadStore()
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	story, ok := store.Stories[ref]
+	spec, ok := store.Specs[ref]
 	if !ok {
-		return domain.Story{}, iox.NewPrecondition(fmt.Sprintf("story %s not found in backlog", ref), "", nil)
+		return domain.Spec{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found in backlog", ref), "", nil)
 	}
-	return story, nil
+	return spec, nil
 }
 
-func (c *Connector) ReadStoryTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
+func (c *Connector) ReadSpecTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
 	plan, err := c.readPlan(parentRef)
 	if err != nil {
 		return nil, err
@@ -132,14 +132,14 @@ func (c *Connector) ReadExistingBacklog(ctx context.Context) (domain.BacklogSumm
 	seenEpics := map[string]domain.Epic{}
 	for _, col := range c.boardColumns() {
 		for _, code := range store.Backlog.Orders.Board[col.ID] {
-			story, ok := store.Stories[code]
+			spec, ok := store.Specs[code]
 			if !ok {
 				continue
 			}
-			out.Codes = append(out.Codes, story.Code)
-			out.Titles = append(out.Titles, story.Title)
-			if story.Epic.Code != "" {
-				seenEpics[story.Epic.Code] = story.Epic
+			out.Codes = append(out.Codes, spec.Code)
+			out.Titles = append(out.Titles, spec.Title)
+			if spec.Epic.Code != "" {
+				seenEpics[spec.Epic.Code] = spec.Epic
 			}
 		}
 	}
@@ -164,7 +164,7 @@ func (c *Connector) SavePRD(ctx context.Context, content string) (domain.WriteRe
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Path: path}}}, nil
 }
 
-// ReadBoardOrder returns the per-column ordering of story codes as persisted
+// ReadBoardOrder returns the per-column ordering of spec codes as persisted
 // by MoveBoardCard. The web viewer uses it to render the Kanban in the order
 // the user assigned via drag-and-drop.
 func (c *Connector) ReadBoardOrder(ctx context.Context) (map[string][]string, error) {
@@ -199,7 +199,7 @@ func (c *Connector) ReadPRD(ctx context.Context) (string, error) {
 // ListMockups enumerates subfolders of paths.mockups that contain an
 // index.html and returns them as MockupEntry records. A missing mockups
 // directory yields an empty slice (not an error). Folder names matching the
-// US-NNN or EP-NNN pattern are tagged with the corresponding StoryCode.
+// US-NNN or EP-NNN pattern are tagged with the corresponding SpecCode.
 func (c *Connector) ListMockups(ctx context.Context) ([]domain.MockupEntry, error) {
 	root := c.cfg.AbsPath(c.cfg.Paths.Mockups)
 	entries, err := os.ReadDir(root)
@@ -223,8 +223,8 @@ func (c *Connector) ListMockups(ctx context.Context) ([]domain.MockupEntry, erro
 			Name: name,
 			URL:  "/mockups/" + name + "/index.html",
 		}
-		if mockupStoryCodeRE.MatchString(name) {
-			entry.StoryCode = name
+		if mockupSpecCodeRE.MatchString(name) {
+			entry.SpecCode = name
 		}
 		out = append(out, entry)
 	}
@@ -232,15 +232,15 @@ func (c *Connector) ListMockups(ctx context.Context) ([]domain.MockupEntry, erro
 	return out, nil
 }
 
-func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
-	if len(stories) == 0 {
-		return domain.WriteResult{}, iox.NewInvalidInput("no stories to write", "stdin must contain a non-empty stories array", nil)
+func (c *Connector) SaveInitialBacklog(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
+	if len(specs) == 0 {
+		return domain.WriteResult{}, iox.NewInvalidInput("no specs to write", "stdin must contain a non-empty specs array", nil)
 	}
 	if store, err := c.loadStore(); err == nil {
-		if len(store.Stories) > 0 {
+		if len(store.Specs) > 0 {
 			return domain.WriteResult{}, iox.NewConnector(
 				iox.CodeConflict,
-				"backlog already exists with stories",
+				"backlog already exists with specs",
 				"use `archetipo spec add` to extend it",
 				nil,
 			)
@@ -257,90 +257,90 @@ func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Sto
 			Schema:  backlogSchema,
 			Version: 2,
 			Orders:  ordersDoc{Board: map[string][]string{}},
-		}, map[string]domain.Story{}),
-		Stories: map[string]domain.Story{},
+		}, map[string]domain.Spec{}),
+		Specs: map[string]domain.Spec{},
 	}
-	for _, story := range stories {
-		story.Ref = story.Code
-		store.Stories[story.Code] = story
+	for _, spec := range specs {
+		spec.Ref = spec.Code
+		store.Specs[spec.Code] = spec
 	}
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
 	}
-	return domain.WriteResult{OK: true, Refs: refsFromStories(stories, c.backlogPath())}, nil
+	return domain.WriteResult{OK: true, Refs: refsFromSpecs(specs, c.backlogPath())}, nil
 }
 
-func (c *Connector) AppendStories(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
-	if len(stories) == 0 {
-		return domain.WriteResult{}, iox.NewInvalidInput("no stories to append", "stdin must contain a non-empty stories array", nil)
+func (c *Connector) AppendSpecs(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
+	if len(specs) == 0 {
+		return domain.WriteResult{}, iox.NewInvalidInput("no specs to append", "stdin must contain a non-empty specs array", nil)
 	}
 	store, err := c.loadStore()
 	if err != nil {
 		var ce *iox.CodedError
 		if errors.As(err, &ce) && ce.Code == iox.CodePreconditionMissing {
-			return c.SaveInitialBacklog(ctx, stories)
+			return c.SaveInitialBacklog(ctx, specs)
 		}
 		return domain.WriteResult{}, err
 	}
-	added := make([]domain.Story, 0, len(stories))
-	for _, story := range stories {
-		if _, exists := store.Stories[story.Code]; exists {
+	added := make([]domain.Spec, 0, len(specs))
+	for _, spec := range specs {
+		if _, exists := store.Specs[spec.Code]; exists {
 			continue
 		}
-		story.Ref = story.Code
-		store.Stories[story.Code] = story
-		added = append(added, story)
+		spec.Ref = spec.Code
+		store.Specs[spec.Code] = spec
+		added = append(added, spec)
 	}
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
 	}
-	return domain.WriteResult{OK: true, Refs: refsFromStories(added, c.backlogPath())}, nil
+	return domain.WriteResult{OK: true, Refs: refsFromSpecs(added, c.backlogPath())}, nil
 }
 
-func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.PlanInput) (domain.WriteResult, error) {
-	if storyRef == "" {
-		return domain.WriteResult{}, iox.NewInvalidInput("missing story ref", "pass US-XXX as positional argument", nil)
+func (c *Connector) SavePlan(ctx context.Context, specRef string, plan domain.PlanInput) (domain.WriteResult, error) {
+	if specRef == "" {
+		return domain.WriteResult{}, iox.NewInvalidInput("missing spec ref", "pass US-XXX as positional argument", nil)
 	}
-	if _, err := c.ReadStoryDetail(ctx, storyRef); err != nil {
+	if _, err := c.ReadSpecDetail(ctx, specRef); err != nil {
 		return domain.WriteResult{}, err
 	}
-	if err := c.writePlan(storyRef, plan); err != nil {
+	if err := c.writePlan(specRef, plan); err != nil {
 		return domain.WriteResult{}, err
 	}
-	refs := []domain.Ref{{Code: storyRef, Path: c.planPath(storyRef)}}
+	refs := []domain.Ref{{Code: specRef, Path: c.planPath(specRef)}}
 	for _, task := range plan.Tasks {
-		refs = append(refs, domain.Ref{Code: task.ID, Path: c.planPath(storyRef)})
+		refs = append(refs, domain.Ref{Code: task.ID, Path: c.planPath(specRef)})
 	}
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) TransitionStatus(ctx context.Context, storyRef string, newStatus domain.Status) (domain.WriteResult, error) {
+func (c *Connector) TransitionStatus(ctx context.Context, specRef string, newStatus domain.Status) (domain.WriteResult, error) {
 	store, err := c.loadStore()
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
-	story, ok := store.Stories[storyRef]
+	spec, ok := store.Specs[specRef]
 	if !ok {
-		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
+		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", specRef), "", nil)
 	}
 	colID, ok := columnIDForStatus(c.boardColumns(), newStatus)
 	if !ok {
 		return domain.WriteResult{}, iox.NewConflict(fmt.Sprintf("status %s is not mapped to a board column", newStatus), "", nil)
 	}
-	story.Status = newStatus
-	store.Stories[storyRef] = story
+	spec.Status = newStatus
+	store.Specs[specRef] = spec
 	for id, order := range store.Backlog.Orders.Board {
-		store.Backlog.Orders.Board[id] = removeCode(order, storyRef)
+		store.Backlog.Orders.Board[id] = removeCode(order, specRef)
 	}
-	store.Backlog.Orders.Board[colID] = append(store.Backlog.Orders.Board[colID], storyRef)
+	store.Backlog.Orders.Board[colID] = append(store.Backlog.Orders.Board[colID], specRef)
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
 	}
 	return domain.WriteResult{
 		OK: true,
 		Refs: []domain.Ref{
-			{Code: storyRef, Path: c.backlogPath()},
-			{Code: storyRef, Path: c.storyPath(storyRef)},
+			{Code: specRef, Path: c.backlogPath()},
+			{Code: specRef, Path: c.specPath(specRef)},
 		},
 	}, nil
 }
@@ -373,14 +373,14 @@ func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string)
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: taskRef, Path: c.planPath(parentRef)}}}, nil
 }
 
-func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
+func (c *Connector) MoveBoardCard(ctx context.Context, specRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	store, err := c.loadStore()
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
-	story, ok := store.Stories[storyRef]
+	spec, ok := store.Specs[specRef]
 	if !ok {
-		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
+		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", specRef), "", nil)
 	}
 	targetStatus, ok := columnStatus(c.boardColumns(), targetColumn)
 	if !ok {
@@ -391,18 +391,18 @@ func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn st
 		)
 	}
 	for id, order := range store.Backlog.Orders.Board {
-		store.Backlog.Orders.Board[id] = removeCode(order, storyRef)
+		store.Backlog.Orders.Board[id] = removeCode(order, specRef)
 	}
-	newOrder, err := insertRelative(store.Backlog.Orders.Board[targetColumn], storyRef, anchor)
+	newOrder, err := insertRelative(store.Backlog.Orders.Board[targetColumn], specRef, anchor)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
 	store.Backlog.Orders.Board[targetColumn] = newOrder
-	refs := []domain.Ref{{Code: storyRef, Path: c.backlogPath()}}
-	if story.Status != targetStatus {
-		story.Status = targetStatus
-		store.Stories[storyRef] = story
-		refs = append(refs, domain.Ref{Code: storyRef, Path: c.storyPath(storyRef)})
+	refs := []domain.Ref{{Code: specRef, Path: c.backlogPath()}}
+	if spec.Status != targetStatus {
+		spec.Status = targetStatus
+		store.Specs[specRef] = spec
+		refs = append(refs, domain.Ref{Code: specRef, Path: c.specPath(specRef)})
 	}
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
@@ -410,69 +410,69 @@ func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn st
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (domain.WriteResult, error) {
+func (c *Connector) PostComment(ctx context.Context, specRef, body string) (domain.WriteResult, error) {
 	return domain.WriteResult{OK: true}, nil
 }
 
-// ReadPlanBody returns the prose body of a story's plan, if any. It is not on
+// ReadPlanBody returns the prose body of a spec's plan, if any. It is not on
 // the Connector interface because not every backend keeps a separate body:
 // the github connector mixes it into the parent issue body. The web viewer
 // discovers this method at runtime via a type assertion.
-func (c *Connector) ReadPlanBody(ctx context.Context, storyCode string) (string, error) {
-	plan, err := c.readPlan(storyCode)
+func (c *Connector) ReadPlanBody(ctx context.Context, specCode string) (string, error) {
+	plan, err := c.readPlan(specCode)
 	if err != nil {
 		return "", err
 	}
 	return plan.Body, nil
 }
 
-func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain.SpecUpdate) (domain.WriteResult, error) {
 	store, err := c.loadStore()
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
-	story, ok := store.Stories[storyRef]
+	spec, ok := store.Specs[specRef]
 	if !ok {
-		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("story %s not found", storyRef), "", nil)
+		return domain.WriteResult{}, iox.NewPrecondition(fmt.Sprintf("spec %s not found", specRef), "", nil)
 	}
 	if patch.Title != nil {
-		story.Title = *patch.Title
+		spec.Title = *patch.Title
 	}
 	if patch.Priority != nil {
-		story.Priority = *patch.Priority
+		spec.Priority = *patch.Priority
 	}
-	if patch.StoryPoints != nil {
-		story.StoryPoints = *patch.StoryPoints
+	if patch.Points != nil {
+		spec.Points = *patch.Points
 	}
 	if patch.Scope != nil {
-		story.Scope = *patch.Scope
+		spec.Scope = *patch.Scope
 	}
 	if patch.BlockedBy != nil {
-		story.BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
+		spec.BlockedBy = append([]string(nil), (*patch.BlockedBy)...)
 	}
 	if patch.Body != nil {
-		story.Body = *patch.Body
+		spec.Body = *patch.Body
 	}
 	if patch.Epic != nil {
-		story.Epic = *patch.Epic
+		spec.Epic = *patch.Epic
 	}
-	store.Stories[storyRef] = story
+	store.Specs[specRef] = spec
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
 	}
 	return domain.WriteResult{
 		OK: true,
 		Refs: []domain.Ref{
-			{Code: storyRef, Path: c.storyPath(storyRef)},
-			{Code: storyRef, Path: c.backlogPath()},
+			{Code: specRef, Path: c.specPath(specRef)},
+			{Code: specRef, Path: c.backlogPath()},
 		},
 	}, nil
 }
 
-func refsFromStories(stories []domain.Story, path string) []domain.Ref {
-	out := make([]domain.Ref, 0, len(stories))
-	for _, story := range stories {
-		out = append(out, domain.Ref{Code: story.Code, Path: path})
+func refsFromSpecs(specs []domain.Spec, path string) []domain.Ref {
+	out := make([]domain.Ref, 0, len(specs))
+	for _, spec := range specs {
+		out = append(out, domain.Ref{Code: spec.Code, Path: path})
 	}
 	return out
 }

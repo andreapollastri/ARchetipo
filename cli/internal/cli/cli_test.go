@@ -85,9 +85,9 @@ func decodeError(t *testing.T, res result) (int, string) {
 	return res.exit, env.Error.Code
 }
 
-const storyJSON = `{"stories":[
-	{"code":"US-001","title":"First","priority":"HIGH","story_points":3,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
-	{"code":"US-002","title":"Second","priority":"MEDIUM","story_points":2,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}}
+const specJSON = `{"specs":[
+	{"code":"US-001","title":"First","priority":"HIGH","points":3,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
+	{"code":"US-002","title":"Second","priority":"MEDIUM","points":2,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}}
 ]}`
 
 const planJSON = `{"plan_body":"## Plan\nDo the work","tasks":[
@@ -106,8 +106,8 @@ func TestConfigShow(t *testing.T) {
 
 func TestSpecAdd_EmptyBacklog(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	res := runCLI(t, "", "spec", "add", "--file", storiesFile)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	res := runCLI(t, "", "spec", "add", "--file", specsFile)
 	kind, data := decodeOK(t, res)
 	if kind != "write_result" {
 		t.Fatalf("expected kind=write_result, got %s", kind)
@@ -122,12 +122,12 @@ func TestSpecAdd_EmptyBacklog(t *testing.T) {
 
 func TestSpecAdd_Idempotent(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	first := runCLI(t, "", "spec", "add", "--file", storiesFile)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	first := runCLI(t, "", "spec", "add", "--file", specsFile)
 	if first.exit != 0 {
 		t.Fatalf("first add failed: %s", first.stderr.String())
 	}
-	second := runCLI(t, "", "spec", "add", "--file", storiesFile)
+	second := runCLI(t, "", "spec", "add", "--file", specsFile)
 	_, data := decodeOK(t, second)
 	skipped, _ := data["skipped"].([]any)
 	if len(skipped) != 2 {
@@ -140,13 +140,13 @@ func TestSpecAdd_Idempotent(t *testing.T) {
 
 func TestSpecAdd_MixedSkipAndAppend(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
-	mixed := `{"stories":[
-		{"code":"US-001","title":"dup","priority":"HIGH","story_points":1,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
-		{"code":"US-003","title":"new","priority":"LOW","story_points":1,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}}
+	mixed := `{"specs":[
+		{"code":"US-001","title":"dup","priority":"HIGH","points":1,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
+		{"code":"US-003","title":"new","priority":"LOW","points":1,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}}
 	]}`
 	mixedFile := writeInputFile(t, "mixed.json", mixed)
 	res := runCLI(t, "", "spec", "add", "--file", mixedFile)
@@ -163,8 +163,8 @@ func TestSpecAdd_MixedSkipAndAppend(t *testing.T) {
 
 func TestSpecList(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "list")
@@ -185,18 +185,18 @@ func TestSpecList(t *testing.T) {
 
 func TestSpecShow_ByCode(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "show", "US-001")
 	kind, data := decodeOK(t, res)
-	if kind != "story" {
-		t.Fatalf("expected kind=story, got %s", kind)
+	if kind != "spec" {
+		t.Fatalf("expected kind=spec, got %s", kind)
 	}
-	story, _ := data["story"].(map[string]any)
-	if story["code"] != "US-001" {
-		t.Fatalf("expected US-001, got %v", story["code"])
+	spec, _ := data["spec"].(map[string]any)
+	if spec["code"] != "US-001" {
+		t.Fatalf("expected US-001, got %v", spec["code"])
 	}
 	tasks, _ := data["tasks"].([]any)
 	if len(tasks) != 0 {
@@ -215,19 +215,19 @@ func TestSpecShow_MissingCodeRejected(t *testing.T) {
 
 func TestSpecNext_AutoPickByStatus(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "next", "--status", "TODO")
 	kind, data := decodeOK(t, res)
-	if kind != "story" {
-		t.Fatalf("expected kind=story, got %s", kind)
+	if kind != "spec" {
+		t.Fatalf("expected kind=spec, got %s", kind)
 	}
-	story, _ := data["story"].(map[string]any)
+	spec, _ := data["spec"].(map[string]any)
 	// Auto-pick: priority HIGH first → US-001 (HIGH) before US-002 (MEDIUM).
-	if story["code"] != "US-001" {
-		t.Fatalf("expected auto-pick US-001 (HIGH), got %v", story["code"])
+	if spec["code"] != "US-001" {
+		t.Fatalf("expected auto-pick US-001 (HIGH), got %v", spec["code"])
 	}
 }
 
@@ -242,9 +242,9 @@ func TestSpecNext_MissingStatusRejected(t *testing.T) {
 
 func TestSpecPlan_TODOToPlanned(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile)
@@ -254,9 +254,9 @@ func TestSpecPlan_TODOToPlanned(t *testing.T) {
 	// Verify status moved by reading it back.
 	show := runCLI(t, "", "spec", "show", "US-001")
 	_, data := decodeOK(t, show)
-	story, _ := data["story"].(map[string]any)
-	if story["status"] != "PLANNED" {
-		t.Fatalf("expected status PLANNED, got %v", story["status"])
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "PLANNED" {
+		t.Fatalf("expected status PLANNED, got %v", spec["status"])
 	}
 	tasks, _ := data["tasks"].([]any)
 	if len(tasks) != 2 {
@@ -269,9 +269,9 @@ func TestSpecPlan_TODOToPlanned(t *testing.T) {
 
 func TestSpecPlan_IdempotentOnPlanned(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
@@ -285,8 +285,8 @@ func TestSpecPlan_IdempotentOnPlanned(t *testing.T) {
 
 func TestSpecPlan_FromStdin(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, planJSON, "spec", "plan", "US-001", "--file", "-")
@@ -308,8 +308,8 @@ func TestSpecPlan_FromStdin(t *testing.T) {
 
 func TestSpecStart_ConflictFromTodo(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "start", "US-001")
@@ -321,9 +321,9 @@ func TestSpecStart_ConflictFromTodo(t *testing.T) {
 
 func TestSpecStart_HappyPath(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
@@ -342,9 +342,9 @@ func TestSpecStart_HappyPath(t *testing.T) {
 
 func TestSpecReview_HappyPathWithComment(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
@@ -353,23 +353,23 @@ func TestSpecReview_HappyPathWithComment(t *testing.T) {
 	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
 		t.Fatalf("start failed: %s", res.stderr.String())
 	}
-	res := runCLI(t, "Closing notes for the story", "spec", "review", "US-001")
+	res := runCLI(t, "Closing notes for the spec", "spec", "review", "US-001")
 	if res.exit != 0 {
 		t.Fatalf("review failed: %s", res.stderr.String())
 	}
 	show := runCLI(t, "", "spec", "show", "US-001")
 	_, data := decodeOK(t, show)
-	story, _ := data["story"].(map[string]any)
-	if story["status"] != "REVIEW" {
-		t.Fatalf("expected REVIEW, got %v", story["status"])
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "REVIEW" {
+		t.Fatalf("expected REVIEW, got %v", spec["status"])
 	}
 }
 
 func TestSpecReview_CommentFromFile(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
@@ -387,9 +387,9 @@ func TestSpecReview_CommentFromFile(t *testing.T) {
 
 func TestTaskDone_Positional(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
 	planFile := writeInputFile(t, "plan.json", planJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
@@ -403,8 +403,8 @@ func TestTaskDone_Positional(t *testing.T) {
 
 func TestSpecMove_ChangesStatusAndOrder(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	if res := runCLI(t, "", "spec", "move", "US-002", "--to", "review"); res.exit != 0 {
@@ -412,16 +412,16 @@ func TestSpecMove_ChangesStatusAndOrder(t *testing.T) {
 	}
 	show := runCLI(t, "", "spec", "show", "US-002")
 	_, data := decodeOK(t, show)
-	story, _ := data["story"].(map[string]any)
-	if story["status"] != "REVIEW" {
-		t.Fatalf("expected REVIEW after spec move, got %v", story["status"])
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "REVIEW" {
+		t.Fatalf("expected REVIEW after spec move, got %v", spec["status"])
 	}
 }
 
 func TestSpecMove_InvalidToReturnsInvalidInput(t *testing.T) {
 	newProject(t)
-	storiesFile := writeInputFile(t, "stories.json", storyJSON)
-	if res := runCLI(t, "", "spec", "add", "--file", storiesFile); res.exit != 0 {
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
 		t.Fatalf("seed add failed: %s", res.stderr.String())
 	}
 	res := runCLI(t, "", "spec", "move", "US-001", "--to", "BOGUS")

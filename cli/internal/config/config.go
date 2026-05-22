@@ -310,7 +310,7 @@ func setMappingChild(m *yaml.Node, key string, value *yaml.Node) {
 func projectFieldsEmpty(f domain.ProjectFields) bool {
 	return f.StatusFieldID == "" &&
 		f.PriorityFieldID == "" &&
-		f.StoryPointsFieldID == "" &&
+		f.PointsFieldID == "" &&
 		f.EpicFieldID == "" &&
 		len(f.StatusOptions) == 0 &&
 		len(f.PriorityOptions) == 0 &&
@@ -323,7 +323,7 @@ func projectFieldsNode(f domain.ProjectFields) *yaml.Node {
 	setStringMapChild(n, "status_options", f.StatusOptions)
 	setOptionalScalarChild(n, "priority_field_id", f.PriorityFieldID)
 	setStringMapChild(n, "priority_options", f.PriorityOptions)
-	setOptionalScalarChild(n, "story_points_field_id", f.StoryPointsFieldID)
+	setOptionalScalarChild(n, "points_field_id", f.PointsFieldID)
 	setOptionalScalarChild(n, "epic_field_id", f.EpicFieldID)
 	setStringMapChild(n, "epic_options", f.EpicOptions)
 	return n

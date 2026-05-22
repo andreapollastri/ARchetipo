@@ -30,20 +30,20 @@ func newTestServer(t *testing.T) (*Server, *inmemory.Connector) {
 	return srv, conn
 }
 
-func seedStories(t *testing.T, c *inmemory.Connector) {
+func seedSpecs(t *testing.T, c *inmemory.Connector) {
 	t.Helper()
-	stories := []domain.Story{
-		{Code: "US-001", Title: "Setup", Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityHigh, StoryPoints: 3, Status: domain.StatusTodo},
-		{Code: "US-002", Title: "Auth", Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityMedium, StoryPoints: 5, Status: domain.StatusPlanned},
+	specs := []domain.Spec{
+		{Code: "US-001", Title: "Setup", Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityHigh, Points: 3, Status: domain.StatusTodo},
+		{Code: "US-002", Title: "Auth", Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityMedium, Points: 5, Status: domain.StatusPlanned},
 	}
-	if _, err := c.SaveInitialBacklog(context.Background(), stories); err != nil {
+	if _, err := c.SaveInitialBacklog(context.Background(), specs); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestGetBoard(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/api/board", nil)
@@ -61,46 +61,46 @@ func TestGetBoard(t *testing.T) {
 	var todoCount, plannedCount int
 	for _, c := range view.Columns {
 		if c.ID == "todo" {
-			todoCount = len(c.Stories)
+			todoCount = len(c.Specs)
 		}
 		if c.ID == "planned" {
-			plannedCount = len(c.Stories)
+			plannedCount = len(c.Specs)
 		}
 	}
 	if todoCount != 1 || plannedCount != 1 {
-		t.Errorf("expected 1+1 stories in todo+planned, got %d+%d", todoCount, plannedCount)
+		t.Errorf("expected 1+1 specs in todo+planned, got %d+%d", todoCount, plannedCount)
 	}
 }
 
-func TestUpdateStoryEndpoint(t *testing.T) {
+func TestUpdateSpecEndpoint(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
-	patch := map[string]any{"title": "Setup renamed", "priority": "LOW", "story_points": 8}
+	patch := map[string]any{"title": "Setup renamed", "priority": "LOW", "points": 8}
 	body, _ := json.Marshal(patch)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPut, "/api/story/US-001", bytes.NewReader(body))
+	r := httptest.NewRequest(http.MethodPut, "/api/spec/US-001", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	srv.mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
 	}
-	got, err := conn.ReadStoryDetail(context.Background(), "US-001")
+	got, err := conn.ReadSpecDetail(context.Background(), "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Title != "Setup renamed" || got.Priority != domain.PriorityLow || got.StoryPoints != 8 {
+	if got.Title != "Setup renamed" || got.Priority != domain.PriorityLow || got.Points != 8 {
 		t.Errorf("update not applied: %+v", got)
 	}
 }
 
-func TestUpdateStoryNotFound(t *testing.T) {
+func TestUpdateSpecNotFound(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
 	body := []byte(`{"title":"x"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPut, "/api/story/US-404", bytes.NewReader(body))
+	r := httptest.NewRequest(http.MethodPut, "/api/spec/US-404", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	srv.mux.ServeHTTP(w, r)
 	if w.Code != http.StatusNotFound {
@@ -110,7 +110,7 @@ func TestUpdateStoryNotFound(t *testing.T) {
 
 func TestMoveCard(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
 	body := []byte(`{"code":"US-001","to":"in_progress"}`)
 	w := httptest.NewRecorder()
@@ -120,7 +120,7 @@ func TestMoveCard(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
 	}
-	got, err := conn.ReadStoryDetail(context.Background(), "US-001")
+	got, err := conn.ReadSpecDetail(context.Background(), "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMoveCard(t *testing.T) {
 
 func TestSavePlanEndpoint(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
 	plan := map[string]any{
 		"plan_body": "## Plan\n\nbody",
@@ -141,13 +141,13 @@ func TestSavePlanEndpoint(t *testing.T) {
 	}
 	body, _ := json.Marshal(plan)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPut, "/api/story/US-001/plan", bytes.NewReader(body))
+	r := httptest.NewRequest(http.MethodPut, "/api/spec/US-001/plan", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	srv.mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
 	}
-	tasks, err := conn.ReadStoryTasks(context.Background(), "US-001")
+	tasks, err := conn.ReadSpecTasks(context.Background(), "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,11 +260,11 @@ func TestListMockups(t *testing.T) {
 	for _, m := range got.Mockups {
 		byName[m.Name] = m
 	}
-	if byName["US-001"].StoryCode != "US-001" {
-		t.Errorf("US-001 should be tagged with story code, got %q", byName["US-001"].StoryCode)
+	if byName["US-001"].SpecCode != "US-001" {
+		t.Errorf("US-001 should be tagged with spec code, got %q", byName["US-001"].SpecCode)
 	}
-	if byName["app-home"].StoryCode != "" {
-		t.Errorf("app-home should not be tagged with a story code, got %q", byName["app-home"].StoryCode)
+	if byName["app-home"].SpecCode != "" {
+		t.Errorf("app-home should not be tagged with a spec code, got %q", byName["app-home"].SpecCode)
 	}
 	if byName["app-home"].URL != "/mockups/app-home/index.html" {
 		t.Errorf("unexpected URL: %q", byName["app-home"].URL)
@@ -342,21 +342,21 @@ func TestStreamBoardSendsEventOnPublish(t *testing.T) {
 	}
 }
 
-func TestGetStory(t *testing.T) {
+func TestGetSpec(t *testing.T) {
 	srv, conn := newTestServer(t)
-	seedStories(t, conn)
+	seedSpecs(t, conn)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/api/story/US-001", nil)
+	r := httptest.NewRequest(http.MethodGet, "/api/spec/US-001", nil)
 	srv.mux.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
 	}
-	var out storyDetailView
+	var out specDetailView
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Story.Code != "US-001" {
-		t.Errorf("expected US-001, got %+v", out.Story)
+	if out.Spec.Code != "US-001" {
+		t.Errorf("expected US-001, got %+v", out.Spec)
 	}
 }

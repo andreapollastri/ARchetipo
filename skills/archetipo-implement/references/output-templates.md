@@ -11,21 +11,21 @@
 
 ```text
 ❌ **Ugo:** No backlog found. A backlog is required to know what to implement.
-   Run `/archetipo-spec` to create one, then `/archetipo-plan` to plan the first story.
+   Run `/archetipo-spec` to create one, then `/archetipo-plan` to plan the first spec.
 ```
 
-### No planned stories
+### No planned specs
 
 ```text
-❌ **Ugo:** No user stories in status {config.workflow.statuses.planned} found in the backlog.
-   Run `/archetipo-plan` to plan a story, or pass a different story as argument.
+❌ **Ugo:** No specs in status {config.workflow.statuses.planned} found in the backlog.
+   Run `/archetipo-plan` to plan a spec, or pass a different spec as argument.
 ```
 
 ### No implementation plan
 
 ```text
-❌ **Ugo:** No implementation plan found for this story.
-   The story has not been planned yet. Run first:
+❌ **Ugo:** No implementation plan found for this spec.
+   The spec has not been planned yet. Run first:
    `/archetipo-plan {US-CODE}`
 ```
 
@@ -34,7 +34,7 @@
 ## Session Announcement (Phase 0, Step 10)
 
 ```text
-⚡ ARCHETIPO — USER STORY IMPLEMENTATION
+⚡ ARCHETIPO — SPEC IMPLEMENTATION
 
 The delivery team is ready.
 
@@ -43,8 +43,8 @@ The delivery team is ready.
 🧪 Mina — Test Architect
 🔍 Cesare — Code Reviewer
 
-**User Story:** {US-CODE}: {title}
-**Epic:** {EP-CODE} | **Priority:** {PRIORITY} | **Story Points:** {N}
+**Spec:** {US-CODE}: {title}
+**Epic:** {EP-CODE} | **Priority:** {PRIORITY} | **Points:** {N}
 **Tasks to complete:** {N}
 
 Starting implementation...
@@ -134,7 +134,7 @@ Proceeding.
 ```text
 ✅ Implementation complete!
 
-**User Story:** {US-CODE}: {title}
+**Spec:** {US-CODE}: {title}
 **Status:** {config.workflow.statuses.review}
 
 **Implementation summary:**
@@ -151,5 +151,5 @@ Proceeding.
 **Optional improvements left open:**
 - [Improvement title] — `path/to/file.ts:NN` — [brief suggestion]
 
-⚠️ The story is in Review. Moving to {config.workflow.statuses.done} is manual.
+⚠️ The spec is in Review. Moving to {config.workflow.statuses.done} is manual.
 ```

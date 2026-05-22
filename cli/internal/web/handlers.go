@@ -14,10 +14,10 @@ import (
 
 // boardColumnView is the JSON shape of one Kanban column in GET /api/board.
 type boardColumnView struct {
-	ID      string         `json:"id"`
-	Title   string         `json:"title"`
-	Status  domain.Status  `json:"status"`
-	Stories []domain.Story `json:"stories"`
+	ID     string        `json:"id"`
+	Title  string        `json:"title"`
+	Status domain.Status `json:"status"`
+	Specs  []domain.Spec `json:"specs"`
 }
 
 type boardView struct {
@@ -45,7 +45,7 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	labels := info.Workflow.Statuses
-	stories, err := s.conn.FetchBacklogItems(ctx, "")
+	specs, err := s.conn.FetchBacklogItems(ctx, "")
 	if err != nil {
 		writeError(w, err)
 		return
@@ -77,25 +77,25 @@ func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 			boardOrder = order
 		}
 	}
-	storyByCode := make(map[string]domain.Story, len(stories))
-	for _, st := range stories {
-		storyByCode[st.Code] = st
+	specByCode := make(map[string]domain.Spec, len(specs))
+	for _, sp := range specs {
+		specByCode[sp.Code] = sp
 	}
 	for _, col := range boardLayout {
 		c := boardColumnView{ID: col.ID, Title: titleFor(col.ID), Status: col.Status}
 		seen := map[string]bool{}
 		for _, code := range boardOrder[col.ID] {
-			st, ok := storyByCode[code]
-			if !ok || st.Status != col.Status {
+			sp, ok := specByCode[code]
+			if !ok || sp.Status != col.Status {
 				continue
 			}
-			c.Stories = append(c.Stories, st)
+			c.Specs = append(c.Specs, sp)
 			seen[code] = true
 		}
-		for _, st := range stories {
-			if st.Status == col.Status && !seen[st.Code] {
-				c.Stories = append(c.Stories, st)
-				seen[st.Code] = true
+		for _, sp := range specs {
+			if sp.Status == col.Status && !seen[sp.Code] {
+				c.Specs = append(c.Specs, sp)
+				seen[sp.Code] = true
 			}
 		}
 		view.Columns = append(view.Columns, c)
@@ -145,25 +145,25 @@ func (s *Server) handleStreamBoard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type storyDetailView struct {
-	Story    domain.Story  `json:"story"`
+type specDetailView struct {
+	Spec     domain.Spec   `json:"spec"`
 	PlanBody string        `json:"plan_body"`
 	Tasks    []domain.Task `json:"tasks"`
 }
 
-func (s *Server) handleGetStory(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
-		writeError(w, iox.NewInvalidInput("missing story code", "use /api/story/US-XXX", nil))
+		writeError(w, iox.NewInvalidInput("missing spec code", "use /api/spec/US-XXX", nil))
 		return
 	}
 	ctx := r.Context()
-	story, err := s.conn.ReadStoryDetail(ctx, code)
+	spec, err := s.conn.ReadSpecDetail(ctx, code)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	tasks, planBody, err := s.readPlanForStory(ctx, code)
+	tasks, planBody, err := s.readPlanForSpec(ctx, code)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -171,16 +171,16 @@ func (s *Server) handleGetStory(w http.ResponseWriter, r *http.Request) {
 	if tasks == nil {
 		tasks = []domain.Task{}
 	}
-	writeJSON(w, http.StatusOK, storyDetailView{Story: story, PlanBody: planBody, Tasks: tasks})
+	writeJSON(w, http.StatusOK, specDetailView{Spec: spec, PlanBody: planBody, Tasks: tasks})
 }
 
-// readPlanForStory returns the tasks and (when readable) the plan body for a
-// story. The connector interface only exposes ReadStoryTasks, so for connectors
+// readPlanForSpec returns the tasks and (when readable) the plan body for a
+// spec. The connector interface only exposes ReadSpecTasks, so for connectors
 // that also store a plan body (filefs) we look it up via the optional
 // planBodyReader. A missing plan is not an error: the viewer should still be
-// able to display the story with an empty plan.
-func (s *Server) readPlanForStory(ctx context.Context, code string) ([]domain.Task, string, error) {
-	tasks, err := s.conn.ReadStoryTasks(ctx, code)
+// able to display the spec with an empty plan.
+func (s *Server) readPlanForSpec(ctx context.Context, code string) ([]domain.Task, string, error) {
+	tasks, err := s.conn.ReadSpecTasks(ctx, code)
 	if err != nil {
 		var ce *iox.CodedError
 		if errors.As(err, &ce) && ce.Code == iox.CodePreconditionMissing {
@@ -206,7 +206,7 @@ type planBodyReader interface {
 }
 
 // prdReader is an optional capability connectors can implement to expose the
-// raw PRD markdown so the viewer can render it next to stories and plans.
+// raw PRD markdown so the viewer can render it next to specs and plans.
 type prdReader interface {
 	ReadPRD(ctx context.Context) (string, error)
 }
@@ -219,7 +219,7 @@ type mockupLister interface {
 
 // boardOrderReader is an optional capability connectors can implement to expose
 // the per-column ordering produced by drag-and-drop. Without it, the viewer
-// renders stories in whatever order FetchBacklogItems returns, ignoring the
+// renders specs in whatever order FetchBacklogItems returns, ignoring the
 // position the user assigned by moving cards.
 type boardOrderReader interface {
 	ReadBoardOrder(ctx context.Context) (map[string][]string, error)
@@ -277,27 +277,27 @@ func (s *Server) handleListMockups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mockupsView{Mockups: list})
 }
 
-func (s *Server) handleUpdateStory(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUpdateSpec(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
-		writeError(w, iox.NewInvalidInput("missing story code", "", nil))
+		writeError(w, iox.NewInvalidInput("missing spec code", "", nil))
 		return
 	}
-	var patch domain.StoryUpdate
+	var patch domain.SpecUpdate
 	if err := decodeJSON(r, &patch); err != nil {
 		writeError(w, err)
 		return
 	}
-	if _, err := s.conn.UpdateStory(r.Context(), code, patch); err != nil {
+	if _, err := s.conn.UpdateSpec(r.Context(), code, patch); err != nil {
 		writeError(w, err)
 		return
 	}
-	story, err := s.conn.ReadStoryDetail(r.Context(), code)
+	spec, err := s.conn.ReadSpecDetail(r.Context(), code)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"story": story})
+	writeJSON(w, http.StatusOK, map[string]any{"spec": spec})
 }
 
 type savePlanReq struct {
@@ -308,7 +308,7 @@ type savePlanReq struct {
 func (s *Server) handleSavePlan(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
-		writeError(w, iox.NewInvalidInput("missing story code", "", nil))
+		writeError(w, iox.NewInvalidInput("missing spec code", "", nil))
 		return
 	}
 	var req savePlanReq
@@ -392,8 +392,8 @@ func writeError(w http.ResponseWriter, err error) {
 		status = http.StatusBadGateway
 	}
 	writeJSON(w, status, map[string]any{
-		"error":   ce.Message,
-		"code":    ce.Code,
-		"hint":    ce.Hint,
+		"error": ce.Message,
+		"code":  ce.Code,
+		"hint":  ce.Hint,
 	})
 }

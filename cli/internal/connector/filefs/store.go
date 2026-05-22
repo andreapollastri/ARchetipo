@@ -18,7 +18,7 @@ import (
 
 const (
 	backlogSchema = "archetipo/backlog/v2"
-	storySchema   = "archetipo/story/v2"
+	specSchema    = "archetipo/spec/v2"
 	planSchema    = "archetipo/plan/v2"
 )
 
@@ -39,74 +39,74 @@ type ordersDoc struct {
 	Board map[string][]string `yaml:"board"`
 }
 
-type storyDoc struct {
-	Schema      string          `yaml:"schema"`
-	Code        string          `yaml:"code"`
-	Title       string          `yaml:"title"`
-	Epic        storyEpicDoc    `yaml:"epic,omitempty"`
-	Priority    domain.Priority `yaml:"priority"`
-	StoryPoints int             `yaml:"story_points"`
-	Status      domain.Status   `yaml:"status"`
-	BlockedBy   []string        `yaml:"blocked_by,omitempty"`
-	Scope       domain.Scope    `yaml:"scope,omitempty"`
-	Body        string          `yaml:"body,omitempty"`
-	Ref         string          `yaml:"ref,omitempty"`
-	URL         string          `yaml:"url,omitempty"`
+type specDoc struct {
+	Schema    string          `yaml:"schema"`
+	Code      string          `yaml:"code"`
+	Title     string          `yaml:"title"`
+	Epic      specEpicDoc     `yaml:"epic,omitempty"`
+	Priority  domain.Priority `yaml:"priority"`
+	Points    int             `yaml:"points"`
+	Status    domain.Status   `yaml:"status"`
+	BlockedBy []string        `yaml:"blocked_by,omitempty"`
+	Scope     domain.Scope    `yaml:"scope,omitempty"`
+	Body      string          `yaml:"body,omitempty"`
+	Ref       string          `yaml:"ref,omitempty"`
+	URL       string          `yaml:"url,omitempty"`
 }
 
-// storyEpicDoc is the on-disk representation of a story's epic. It accepts
+// specEpicDoc is the on-disk representation of a spec's epic. It accepts
 // the legacy scalar form (`epic: EP-001`) on read and always writes the full
-// mapping form (`epic: {code, title}`) so each story file is self-contained.
-type storyEpicDoc struct {
+// mapping form (`epic: {code, title}`) so each spec file is self-contained.
+type specEpicDoc struct {
 	Code  string `yaml:"code"`
 	Title string `yaml:"title,omitempty"`
 }
 
-func (e *storyEpicDoc) UnmarshalYAML(node *yaml.Node) error {
+func (e *specEpicDoc) UnmarshalYAML(node *yaml.Node) error {
 	if node.Kind == yaml.ScalarNode {
 		e.Code = node.Value
 		e.Title = ""
 		return nil
 	}
-	type rawEpic storyEpicDoc
+	type rawEpic specEpicDoc
 	var raw rawEpic
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
-	*e = storyEpicDoc(raw)
+	*e = specEpicDoc(raw)
 	return nil
 }
 
-func (e storyEpicDoc) IsZero() bool {
+func (e specEpicDoc) IsZero() bool {
 	return e.Code == "" && e.Title == ""
 }
 
 type planDoc struct {
-	Schema    string        `yaml:"schema"`
-	StoryCode string        `yaml:"story_code"`
-	Body      string        `yaml:"body"`
-	Tasks     []domain.Task `yaml:"tasks"`
+	Schema   string        `yaml:"schema"`
+	SpecCode string        `yaml:"spec_code"`
+	Body     string        `yaml:"body"`
+	Tasks    []domain.Task `yaml:"tasks"`
 }
 
 type yamlStore struct {
 	Backlog backlogDoc
-	Stories map[string]domain.Story
+	Specs   map[string]domain.Spec
 }
 
 func (c *Connector) backlogPath() string {
 	return c.cfg.AbsPath(c.cfg.Paths.Backlog)
 }
 
-func (c *Connector) storiesDir() string {
-	return filepath.Join(filepath.Dir(c.backlogPath()), "stories")
+func (c *Connector) specsDir() string {
+	return filepath.Join(filepath.Dir(c.backlogPath()), "specs")
 }
 
-func (c *Connector) planPath(storyRef string) string {
-	return filepath.Join(c.cfg.AbsPath(c.cfg.Paths.Planning), storyRef+"-plan.yaml")
+func (c *Connector) planPath(specRef string) string {
+	return filepath.Join(c.cfg.AbsPath(c.cfg.Paths.Planning), specRef+"-plan.yaml")
 }
 
-func (c *Connector) storyPath(storyCode string) string {
-	return filepath.Join(c.storiesDir(), storyCode+".yaml")
+func (c *Connector) specPath(specCode string) string {
+	return filepath.Join(c.specsDir(), specCode+".yaml")
 }
 
 func (c *Connector) loadStore() (yamlStore, error) {
@@ -122,22 +122,22 @@ func (c *Connector) loadStore() (yamlStore, error) {
 	if err := yaml.Unmarshal(raw, &backlog); err != nil {
 		return yamlStore{}, iox.NewInvalidInput("invalid backlog YAML", "check .archetipo/backlog.yaml", err)
 	}
-	stories, err := c.readStoryDocs(backlog.Epics)
+	specs, err := c.readSpecDocs(backlog.Epics)
 	if err != nil {
 		return yamlStore{}, err
 	}
-	backlog = c.normalizeBacklog(backlog, stories)
-	return yamlStore{Backlog: backlog, Stories: stories}, nil
+	backlog = c.normalizeBacklog(backlog, specs)
+	return yamlStore{Backlog: backlog, Specs: specs}, nil
 }
 
-func (c *Connector) readStoryDocs(epics []domain.Epic) (map[string]domain.Story, error) {
-	dir := c.storiesDir()
+func (c *Connector) readSpecDocs(epics []domain.Epic) (map[string]domain.Spec, error) {
+	dir := c.specsDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]domain.Story{}, nil
+			return map[string]domain.Spec{}, nil
 		}
-		return nil, fmt.Errorf("reading stories dir: %w", err)
+		return nil, fmt.Errorf("reading specs dir: %w", err)
 	}
 	epicTitles := make(map[string]string, len(epics))
 	for _, epic := range epics {
@@ -146,7 +146,7 @@ func (c *Connector) readStoryDocs(epics []domain.Epic) (map[string]domain.Story,
 		}
 		epicTitles[epic.Code] = epic.Title
 	}
-	out := make(map[string]domain.Story, len(entries))
+	out := make(map[string]domain.Spec, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
 			continue
@@ -154,33 +154,33 @@ func (c *Connector) readStoryDocs(epics []domain.Epic) (map[string]domain.Story,
 		path := filepath.Join(dir, entry.Name())
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("reading story file %s: %w", path, err)
+			return nil, fmt.Errorf("reading spec file %s: %w", path, err)
 		}
-		var doc storyDoc
+		var doc specDoc
 		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			return nil, iox.NewInvalidInput(fmt.Sprintf("invalid story YAML at %s", path), "", err)
+			return nil, iox.NewInvalidInput(fmt.Sprintf("invalid spec YAML at %s", path), "", err)
 		}
-		st := doc.toStory()
-		if st.Code == "" {
-			st.Code = strings.TrimSuffix(entry.Name(), ".yaml")
+		sp := doc.toSpec()
+		if sp.Code == "" {
+			sp.Code = strings.TrimSuffix(entry.Name(), ".yaml")
 		}
-		if st.Epic.Code != "" && st.Epic.Title == "" {
-			st.Epic.Title = epicTitles[st.Epic.Code]
+		if sp.Epic.Code != "" && sp.Epic.Title == "" {
+			sp.Epic.Title = epicTitles[sp.Epic.Code]
 		}
-		if st.Ref == "" {
-			st.Ref = st.Code
+		if sp.Ref == "" {
+			sp.Ref = sp.Code
 		}
-		out[st.Code] = st
+		out[sp.Code] = sp
 	}
 	return out, nil
 }
 
-func (c *Connector) readPlan(storyCode string) (planDoc, error) {
-	path := c.planPath(storyCode)
+func (c *Connector) readPlan(specCode string) (planDoc, error) {
+	path := c.planPath(specCode)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return c.readLegacyPlan(storyCode)
+			return c.readLegacyPlan(specCode)
 		}
 		return planDoc{}, fmt.Errorf("reading plan file: %w", err)
 	}
@@ -188,8 +188,8 @@ func (c *Connector) readPlan(storyCode string) (planDoc, error) {
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return planDoc{}, iox.NewInvalidInput(fmt.Sprintf("invalid plan YAML at %s", path), "", err)
 	}
-	if doc.StoryCode == "" {
-		doc.StoryCode = storyCode
+	if doc.SpecCode == "" {
+		doc.SpecCode = specCode
 	}
 	for i := range doc.Tasks {
 		if doc.Tasks[i].Ref == "" {
@@ -199,13 +199,13 @@ func (c *Connector) readPlan(storyCode string) (planDoc, error) {
 	return doc, nil
 }
 
-func (c *Connector) readLegacyPlan(storyCode string) (planDoc, error) {
-	legacyPath := filepath.Join(c.legacyPlanningDir(), storyCode+".md")
+func (c *Connector) readLegacyPlan(specCode string) (planDoc, error) {
+	legacyPath := filepath.Join(c.legacyPlanningDir(), specCode+".md")
 	raw, err := os.ReadFile(legacyPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return planDoc{}, iox.NewPrecondition(
-				fmt.Sprintf("planning file for %s not found", storyCode),
+				fmt.Sprintf("planning file for %s not found", specCode),
 				"run `archetipo spec plan` first", err,
 			)
 		}
@@ -219,10 +219,10 @@ func (c *Connector) readLegacyPlan(storyCode string) (planDoc, error) {
 		tasks[i].Ref = tasks[i].ID
 	}
 	return planDoc{
-		Schema:    planSchema,
-		StoryCode: storyCode,
-		Body:      body,
-		Tasks:     tasks,
+		Schema:   planSchema,
+		SpecCode: specCode,
+		Body:     body,
+		Tasks:    tasks,
 	}, nil
 }
 
@@ -238,14 +238,14 @@ func (c *Connector) loadLegacyStore() (yamlStore, error) {
 		}
 		return yamlStore{}, fmt.Errorf("reading legacy backlog: %w", err)
 	}
-	stories, err := parseBacklog(string(raw))
+	specs, err := parseBacklog(string(raw))
 	if err != nil {
 		return yamlStore{}, err
 	}
-	out := make(map[string]domain.Story, len(stories))
-	for _, story := range stories {
-		story.Ref = story.Code
-		out[story.Code] = story
+	out := make(map[string]domain.Spec, len(specs))
+	for _, spec := range specs {
+		spec.Ref = spec.Code
+		out[spec.Code] = spec
 	}
 	backlog := c.normalizeBacklog(backlogDoc{
 		Schema:  backlogSchema,
@@ -254,7 +254,7 @@ func (c *Connector) loadLegacyStore() (yamlStore, error) {
 			Board: map[string][]string{},
 		},
 	}, out)
-	return yamlStore{Backlog: backlog, Stories: out}, nil
+	return yamlStore{Backlog: backlog, Specs: out}, nil
 }
 
 func (c *Connector) legacyBacklogPath() string {
@@ -279,65 +279,65 @@ func (c *Connector) legacyPlanningDir() string {
 }
 
 func (c *Connector) writeStore(store yamlStore) error {
-	store.Backlog = c.normalizeBacklog(store.Backlog, store.Stories)
+	store.Backlog = c.normalizeBacklog(store.Backlog, store.Specs)
 	if err := writeYAML(c.backlogPath(), store.Backlog); err != nil {
 		return err
 	}
-	for code, story := range store.Stories {
-		doc := storyDocFromStory(story)
-		doc.Schema = storySchema
+	for code, spec := range store.Specs {
+		doc := specDocFromSpec(spec)
+		doc.Schema = specSchema
 		doc.Ref = ""
 		doc.URL = ""
-		if err := writeYAML(c.storyPath(code), doc); err != nil {
+		if err := writeYAML(c.specPath(code), doc); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func storyDocFromStory(story domain.Story) storyDoc {
-	return storyDoc{
-		Code:        story.Code,
-		Title:       story.Title,
-		Epic:        storyEpicDoc{Code: story.Epic.Code, Title: story.Epic.Title},
-		Priority:    story.Priority,
-		StoryPoints: story.StoryPoints,
-		Status:      story.Status,
-		BlockedBy:   story.BlockedBy,
-		Scope:       story.Scope,
-		Body:        story.Body,
-		Ref:         story.Ref,
-		URL:         story.URL,
+func specDocFromSpec(spec domain.Spec) specDoc {
+	return specDoc{
+		Code:      spec.Code,
+		Title:     spec.Title,
+		Epic:      specEpicDoc{Code: spec.Epic.Code, Title: spec.Epic.Title},
+		Priority:  spec.Priority,
+		Points:    spec.Points,
+		Status:    spec.Status,
+		BlockedBy: spec.BlockedBy,
+		Scope:     spec.Scope,
+		Body:      spec.Body,
+		Ref:       spec.Ref,
+		URL:       spec.URL,
 	}
 }
 
-func (d storyDoc) toStory() domain.Story {
-	return domain.Story{
-		Code:        d.Code,
-		Title:       d.Title,
-		Epic:        domain.Epic{Code: d.Epic.Code, Title: d.Epic.Title},
-		Priority:    d.Priority,
-		StoryPoints: d.StoryPoints,
-		Status:      d.Status,
-		BlockedBy:   d.BlockedBy,
-		Scope:       d.Scope,
-		Body:        d.Body,
-		Ref:         d.Ref,
-		URL:         d.URL,
+func (d specDoc) toSpec() domain.Spec {
+	return domain.Spec{
+		Code:      d.Code,
+		Title:     d.Title,
+		Epic:      domain.Epic{Code: d.Epic.Code, Title: d.Epic.Title},
+		Priority:  d.Priority,
+		Points:    d.Points,
+		Status:    d.Status,
+		BlockedBy: d.BlockedBy,
+		Scope:     d.Scope,
+		Body:      d.Body,
+		Ref:       d.Ref,
+		URL:       d.URL,
 	}
 }
 
-func (c *Connector) writePlan(storyCode string, plan domain.PlanInput) error {
+func (c *Connector) writePlan(specCode string, plan domain.PlanInput) error {
 	doc := planDoc{
-		Schema:    planSchema,
-		StoryCode: storyCode,
-		Body:      plan.PlanBody,
-		Tasks:     append([]domain.Task(nil), plan.Tasks...),
+		Schema:   planSchema,
+		SpecCode: specCode,
+		Body:     plan.PlanBody,
+		Tasks:    append([]domain.Task(nil), plan.Tasks...),
 	}
 	for i := range doc.Tasks {
 		doc.Tasks[i].Ref = ""
 	}
-	return writeYAML(c.planPath(storyCode), doc)
+	return writeYAML(c.planPath(specCode), doc)
 }
 
 func writeYAML(path string, v any) error {
@@ -359,7 +359,7 @@ func writeYAML(path string, v any) error {
 	return nil
 }
 
-func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.Story) backlogDoc {
+func (c *Connector) normalizeBacklog(doc backlogDoc, specs map[string]domain.Spec) backlogDoc {
 	doc.Schema = backlogSchema
 	doc.Version = 2
 	columns := c.boardColumns()
@@ -367,12 +367,12 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 		doc.Orders.Board = map[string][]string{}
 	}
 	epics := map[string]domain.Epic{}
-	for _, story := range stories {
-		if story.Ref == "" {
-			story.Ref = story.Code
+	for _, spec := range specs {
+		if spec.Ref == "" {
+			spec.Ref = spec.Code
 		}
-		if story.Epic.Code != "" {
-			epics[story.Epic.Code] = story.Epic
+		if spec.Epic.Code != "" {
+			epics[spec.Epic.Code] = spec.Epic
 		}
 	}
 	doc.Epics = doc.Epics[:0]
@@ -388,11 +388,11 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 	}
 	for _, col := range columns {
 		for _, code := range doc.Orders.Board[col.ID] {
-			story, ok := stories[code]
+			spec, ok := specs[code]
 			if !ok {
 				continue
 			}
-			if expected, ok := columnIDForStatus(columns, story.Status); !ok || expected != col.ID {
+			if expected, ok := columnIDForStatus(columns, spec.Status); !ok || expected != col.ID {
 				continue
 			}
 			if _, dup := boardSeen[code]; dup {
@@ -402,8 +402,8 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 			boardSeen[code] = struct{}{}
 		}
 	}
-	remaining := make([]string, 0, len(stories))
-	for code := range stories {
+	remaining := make([]string, 0, len(specs))
+	for code := range specs {
 		if _, ok := boardSeen[code]; ok {
 			continue
 		}
@@ -411,8 +411,8 @@ func (c *Connector) normalizeBacklog(doc backlogDoc, stories map[string]domain.S
 	}
 	sort.Strings(remaining)
 	for _, code := range remaining {
-		story := stories[code]
-		colID, ok := columnIDForStatus(columns, story.Status)
+		spec := specs[code]
+		colID, ok := columnIDForStatus(columns, spec.Status)
 		if !ok {
 			colID = columns[0].ID
 		}
@@ -462,13 +462,13 @@ func insertRelative(list []string, code string, anchor domain.ReorderAnchor) ([]
 	case anchor.Before != "":
 		idx := indexOf(list, anchor.Before)
 		if idx == -1 {
-			return nil, iox.NewPrecondition(fmt.Sprintf("story %s not found in target order", anchor.Before), "", nil)
+			return nil, iox.NewPrecondition(fmt.Sprintf("spec %s not found in target order", anchor.Before), "", nil)
 		}
 		list = append(list[:idx], append([]string{code}, list[idx:]...)...)
 	case anchor.After != "":
 		idx := indexOf(list, anchor.After)
 		if idx == -1 {
-			return nil, iox.NewPrecondition(fmt.Sprintf("story %s not found in target order", anchor.After), "", nil)
+			return nil, iox.NewPrecondition(fmt.Sprintf("spec %s not found in target order", anchor.After), "", nil)
 		}
 		idx++
 		if idx >= len(list) {

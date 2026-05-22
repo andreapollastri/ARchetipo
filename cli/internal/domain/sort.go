@@ -8,7 +8,7 @@ import (
 
 // SortByPriorityThenCode ordina in-place per priorità (High > Medium > Low)
 // e, a parità, per coda numerica del codice (es. US-2 < US-10).
-func SortByPriorityThenCode(s []Story) {
+func SortByPriorityThenCode(s []Spec) {
 	rank := map[Priority]int{PriorityHigh: 0, PriorityMedium: 1, PriorityLow: 2}
 	sort.SliceStable(s, func(i, j int) bool {
 		ri, rj := rank[s[i].Priority], rank[s[j].Priority]

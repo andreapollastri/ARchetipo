@@ -41,7 +41,7 @@ func NewWatcher(root string, broker *Broker) (*Watcher, error) {
 
 // Run blocks until ctx is done. It bootstraps watches for every existing
 // directory under root, then dispatches debounced Publish calls on relevant
-// changes. Adding directories that appear later (e.g. .archetipo/stories/
+// changes. Adding directories that appear later (e.g. .archetipo/specs/
 // created after start) is handled inline.
 func (w *Watcher) Run(ctx context.Context) error {
 	defer w.fsw.Close()

@@ -10,7 +10,7 @@ import (
 
 func TestWatcherPublishesOnYamlChange(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "stories"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "specs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -41,7 +41,7 @@ func TestWatcherPublishesOnYamlChange(t *testing.T) {
 	// we generate file events.
 	time.Sleep(50 * time.Millisecond)
 
-	path := filepath.Join(root, "stories", "US-001.yaml")
+	path := filepath.Join(root, "specs", "US-001.yaml")
 	if err := os.WriteFile(path, []byte("code: US-001\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

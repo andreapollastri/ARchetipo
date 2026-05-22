@@ -1,11 +1,11 @@
 ---
 name: archetipo-spec
-description: Creates the initial product backlog from a PRD, or appends new user stories to an existing one. Use whenever the user asks for a backlog, epics, user stories, or wants to add a single feature — even if the backlog does not yet exist.
+description: Creates the initial product backlog from a PRD, or appends new specs to an existing one. Use whenever the user asks for a backlog, epics, specs, user stories, or wants to add a single feature — even if the backlog does not yet exist.
 ---
 
 # ARchetipo - Spec Skill
 
-You are the public entry point for ARchetipo backlog and user-story work.
+You are the public entry point for ARchetipo backlog and spec work. A spec is the unit of work in the backlog; its body is written as a user story.
 
 Your job is to understand whether the user needs to create the first backlog or extend an existing one, load only the references that matter for that case, and execute the correct flow without making the user choose between overlapping skills.
 
@@ -29,7 +29,7 @@ Keep the working context lean:
 Use this mode when:
 - the user asks to generate a backlog from an existing PRD or requirements artifact
 - no backlog exists yet
-- the user asks for the first epics or user stories of the project
+- the user asks for the first epics or specs of the project
 
 In this mode:
 1. Read this file
@@ -40,12 +40,12 @@ In this mode:
 
 Use this mode when:
 - a backlog already exists
-- the user asks to add, refine, split, or append user stories
+- the user asks to add, refine, split, or append specs
 - the user wants to extend the backlog without regenerating it from scratch
 
 In this mode:
 1. Read this file
-2. Read `./references/story-extension-flow.md`
+2. Read `./references/spec-extension-flow.md`
 3. Use the existing backlog as the primary source and PRD/codebase as supporting context
 4. Append or create only the requested items
 
@@ -70,14 +70,14 @@ Extract and keep available from `data`:
 
 Use this routine whenever the skill must decide whether it is extending an existing backlog or creating the first one.
 
-Run `archetipo spec list` and parse the JSON envelope. The CLI returns `data.items` (full Story objects) and `data.summary` with codes, last code, epics, and titles for the existing backlog.
+Run `archetipo spec list` and parse the JSON envelope. The CLI returns `data.items` (full Spec objects) and `data.summary` with codes, last code, epics, and titles for the existing backlog.
 
-If `data.summary.codes` is non-empty, use the existing stories as the source of truth for backlog extension.
+If `data.summary.codes` is non-empty, use the existing specs as the source of truth for backlog extension.
 If `data.summary.codes` is empty, treat the project as backlog-less and route to initial backlog creation.
 
 ## PRD Discovery
 
-Use this routine whenever initial backlog creation needs a PRD or when story extension needs extra product context:
+Use this routine whenever initial backlog creation needs a PRD or when spec extension needs extra product context:
 
 1. Try to read `{config.paths.prd}`
 2. Only if that fails with file not found:
@@ -107,7 +107,7 @@ Prefer `mode: bootstrap-backlog` when:
 
 Prefer `mode: extend-backlog` when:
 - the backlog already exists
-- the request is about one or more incremental stories, a new feature slice, a refinement, or a split
+- the request is about one or more incremental specs, a new feature slice, a refinement, or a split
 
 If a backlog already exists but the user explicitly asks to regenerate it from the PRD:
 - ask for confirmation before overwriting or recreating the initial backlog
@@ -123,23 +123,36 @@ Do not expose mode names, routing decisions, or workflow labels in user-facing m
 
 - Initial backlog creation belongs to this skill, not to `archetipo-inception`
 
-## Story Template
+## CLI payload shape
 
-Use this shape for every story, in both initial backlog generation and story extension:
+`archetipo spec add` expects a JSON or YAML payload with this shape:
+
+```json
+{"specs": [
+  {"code": "US-001", "title": "...", "epic": {"code": "EP-001", "title": "..."},
+   "priority": "HIGH", "points": 3, "status": "TODO", "body": "...markdown..."}
+]}
+```
+
+The `body` field carries the spec content rendered as a user story (see Spec Template below). `points` is the canonical field name (no `story_` prefix).
+
+## Spec Template
+
+Use this shape for every spec, in both initial backlog generation and spec extension. The body follows the user-story agile format; the container is a spec.
 
 ```markdown
 #### US-XXX: [Concise action-oriented title]
 
-**Epic:** EP-XXX | **Priority:** HIGH | **Story Points:** N | **Status:** {config.workflow.statuses.todo}
+**Epic:** EP-XXX | **Priority:** HIGH | **Points:** N | **Status:** {config.workflow.statuses.todo}
 **Blocked by:** -
 
-**Story**
+**User Story**
 As [persona name or role],
 I want [specific action or capability],
 so that [concrete benefit tied to a PRD goal].
 
 **Demonstrates**
-After implementing this story, [describe what can be concretely observed or verified — e.g. for a feature: "the user can open the reports page, click Export, and download a CSV"; for a foundational story: "a developer can run the test suite and see all checks pass"]
+After implementing this spec, [describe what can be concretely observed or verified — e.g. for a feature: "the user can open the reports page, click Export, and download a CSV"; for a foundational spec: "a developer can run the test suite and see all checks pass"]
 
 **Acceptance Criteria**
 - [ ] [Primary happy path]

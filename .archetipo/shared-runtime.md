@@ -56,7 +56,7 @@ Rules:
 1. Keep every `{{PLACEHOLDER}}` token **unchanged** — do not translate placeholder names.
 2. Keep code blocks, file paths, CLI commands, and identifiers unchanged.
 3. Keep technical terms that have no natural translation (e.g. "MVP", "ADR", "CI/CD", "ORM") unchanged unless the target language has a standard equivalent already used in the existing artifact.
-4. Keep consistency with any existing artifact language (PRD → backlog → stories must all use the same language).
+4. Keep consistency with any existing artifact language (PRD → backlog → specs must all use the same language).
 5. If the detected language is English, render the template as-is.
 
 The final output must read as a single coherent document in the detected language — never a mix of English scaffolding and localized content.

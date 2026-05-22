@@ -22,28 +22,28 @@ func newTestConnector(t *testing.T) *Connector {
 	return New(cfg)
 }
 
-func TestStoryMarkerRoundTrip(t *testing.T) {
-	s := domain.Story{
-		Code:        "US-007",
-		Title:       "Login utente",
-		Epic:        domain.Epic{Code: "EP-002", Title: "Auth Foundations"},
-		Priority:    domain.PriorityHigh,
-		StoryPoints: 5,
-		Status:      domain.StatusPlanned,
-		BlockedBy:   []string{"US-002", "US-003"},
-		Scope:       "MVP",
+func TestSpecMarkerRoundTrip(t *testing.T) {
+	s := domain.Spec{
+		Code:      "US-007",
+		Title:     "Login utente",
+		Epic:      domain.Epic{Code: "EP-002", Title: "Auth Foundations"},
+		Priority:  domain.PriorityHigh,
+		Points:    5,
+		Status:    domain.StatusPlanned,
+		BlockedBy: []string{"US-002", "US-003"},
+		Scope:     "MVP",
 	}
-	line := storyMarker(s)
+	line := specMarker(s)
 	mk, ok := parseMarker(line)
 	if !ok {
 		t.Fatalf("failed to parse generated marker: %s", line)
 	}
-	got, err := storyFromMarker(mk)
+	got, err := specFromMarker(mk)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got.Title = s.Title // marker doesn't carry title
-	if got.Code != s.Code || got.Priority != s.Priority || got.StoryPoints != s.StoryPoints || got.Status != s.Status || got.Scope != s.Scope {
+	if got.Code != s.Code || got.Priority != s.Priority || got.Points != s.Points || got.Status != s.Status || got.Scope != s.Scope {
 		t.Errorf("structured fields differ: got=%+v want=%+v", got, s)
 	}
 	if got.Epic.Code != s.Epic.Code || got.Epic.Title != s.Epic.Title {
@@ -55,72 +55,72 @@ func TestStoryMarkerRoundTrip(t *testing.T) {
 }
 
 func TestRenderBacklogIsDeterministic(t *testing.T) {
-	stories := []domain.Story{
+	specs := []domain.Spec{
 		{
 			Code: "US-001", Title: "Setup",
-			Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-			Priority:    domain.PriorityHigh,
-			StoryPoints: 3,
-			Status:      domain.StatusTodo,
-			Scope:       "MVP",
-			Body:        "## Story\n\nAs a user, I want X.\n",
+			Epic:     domain.Epic{Code: "EP-001", Title: "Foundations"},
+			Priority: domain.PriorityHigh,
+			Points:   3,
+			Status:   domain.StatusTodo,
+			Scope:    "MVP",
+			Body:     "## Spec\n\nAs a user, I want X.\n",
 		},
 		{
 			Code: "US-002", Title: "Auth",
-			Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-			Priority:    domain.PriorityMedium,
-			StoryPoints: 5,
-			Status:      domain.StatusTodo,
-			BlockedBy:   []string{"US-001"},
-			Body:        "## Story\n\nLogin.\n",
+			Epic:      domain.Epic{Code: "EP-001", Title: "Foundations"},
+			Priority:  domain.PriorityMedium,
+			Points:    5,
+			Status:    domain.StatusTodo,
+			BlockedBy: []string{"US-001"},
+			Body:      "## Spec\n\nLogin.\n",
 		},
 	}
-	a := renderBacklog(stories)
-	b := renderBacklog(stories)
+	a := renderBacklog(specs)
+	b := renderBacklog(specs)
 	if a != b {
 		t.Fatalf("non-deterministic rendering")
 	}
 }
 
 func TestRoundTripBacklog(t *testing.T) {
-	stories := []domain.Story{
+	specs := []domain.Spec{
 		{
 			Code: "US-001", Title: "Setup",
-			Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-			Priority:    domain.PriorityHigh,
-			StoryPoints: 3,
-			Status:      domain.StatusTodo,
-			Scope:       "MVP",
-			Body:        "## Story\n\nAs a user, I want X.",
+			Epic:     domain.Epic{Code: "EP-001", Title: "Foundations"},
+			Priority: domain.PriorityHigh,
+			Points:   3,
+			Status:   domain.StatusTodo,
+			Scope:    "MVP",
+			Body:     "## Spec\n\nAs a user, I want X.",
 		},
 		{
 			Code: "US-002", Title: "Auth",
-			Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-			Priority:    domain.PriorityMedium,
-			StoryPoints: 5,
-			Status:      domain.StatusTodo,
-			BlockedBy:   []string{"US-001"},
-			Body:        "## Story\n\nLogin.",
+			Epic:      domain.Epic{Code: "EP-001", Title: "Foundations"},
+			Priority:  domain.PriorityMedium,
+			Points:    5,
+			Status:    domain.StatusTodo,
+			BlockedBy: []string{"US-001"},
+			Body:      "## Spec\n\nLogin.",
 		},
 	}
-	rendered := renderBacklog(stories)
+	rendered := renderBacklog(specs)
 	parsed, err := parseBacklog(rendered)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(parsed) != 2 {
-		t.Fatalf("expected 2 stories, got %d", len(parsed))
+		t.Fatalf("expected 2 specs, got %d", len(parsed))
 	}
-	for i, want := range stories {
+	for i, want := range specs {
 		got := parsed[i]
 		if got.Code != want.Code || got.Title != want.Title {
-			t.Errorf("story[%d] head: got %s/%q want %s/%q", i, got.Code, got.Title, want.Code, want.Title)
+			t.Errorf("spec[%d] head: got %s/%q want %s/%q", i, got.Code, got.Title, want.Code, want.Title)
 		}
-		if got.Priority != want.Priority || got.StoryPoints != want.StoryPoints || got.Status != want.Status {
-			t.Errorf("story[%d] fields: got=%+v want=%+v", i, got, want)
+		if got.Priority != want.Priority || got.Points != want.Points || got.Status != want.Status {
+			t.Errorf("spec[%d] fields: got=%+v want=%+v", i, got, want)
 		}
 		if strings.TrimSpace(got.Body) != strings.TrimSpace(want.Body) {
-			t.Errorf("story[%d] body mismatch: got=%q want=%q", i, got.Body, want.Body)
+			t.Errorf("spec[%d] body mismatch: got=%q want=%q", i, got.Body, want.Body)
 		}
 	}
 	// Round-trip: render again should produce the same bytes.
@@ -167,18 +167,18 @@ func TestPlanRoundTrip(t *testing.T) {
 	}
 }
 
-func TestUpdateStory(t *testing.T) {
+func TestUpdateSpec(t *testing.T) {
 	c := newTestConnector(t)
 	ctx := context.Background()
-	_, err := c.SaveInitialBacklog(ctx, []domain.Story{{
-		Code:        "US-001",
-		Title:       "Setup",
-		Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-		Priority:    domain.PriorityMedium,
-		StoryPoints: 3,
-		Status:      domain.StatusTodo,
-		Scope:       "MVP",
-		Body:        "## Story\n\nOriginal.",
+	_, err := c.SaveInitialBacklog(ctx, []domain.Spec{{
+		Code:     "US-001",
+		Title:    "Setup",
+		Epic:     domain.Epic{Code: "EP-001", Title: "Foundations"},
+		Priority: domain.PriorityMedium,
+		Points:   3,
+		Status:   domain.StatusTodo,
+		Scope:    "MVP",
+		Body:     "## Spec\n\nOriginal.",
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -186,17 +186,17 @@ func TestUpdateStory(t *testing.T) {
 	newTitle := "Setup project"
 	newPriority := domain.PriorityHigh
 	newPoints := 5
-	newBody := "## Story\n\nUpdated."
-	patch := domain.StoryUpdate{
-		Title:       &newTitle,
-		Priority:    &newPriority,
-		StoryPoints: &newPoints,
-		Body:        &newBody,
+	newBody := "## Spec\n\nUpdated."
+	patch := domain.SpecUpdate{
+		Title:    &newTitle,
+		Priority: &newPriority,
+		Points:   &newPoints,
+		Body:     &newBody,
 	}
-	if _, err := c.UpdateStory(ctx, "US-001", patch); err != nil {
+	if _, err := c.UpdateSpec(ctx, "US-001", patch); err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadStoryDetail(ctx, "US-001")
+	got, err := c.ReadSpecDetail(ctx, "US-001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +206,8 @@ func TestUpdateStory(t *testing.T) {
 	if got.Priority != newPriority {
 		t.Errorf("priority not updated: %q", got.Priority)
 	}
-	if got.StoryPoints != newPoints {
-		t.Errorf("story_points not updated: %d", got.StoryPoints)
+	if got.Points != newPoints {
+		t.Errorf("points not updated: %d", got.Points)
 	}
 	if got.Body != newBody {
 		t.Errorf("body not updated: %q", got.Body)
@@ -221,70 +221,70 @@ func TestUpdateStory(t *testing.T) {
 	}
 }
 
-func TestUpdateStoryUnknownReturnsPrecondition(t *testing.T) {
+func TestUpdateSpecUnknownReturnsPrecondition(t *testing.T) {
 	c := newTestConnector(t)
-	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{
+	_, err := c.SaveInitialBacklog(context.Background(), []domain.Spec{{
 		Code: "US-001", Title: "Setup",
-		Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityHigh, StoryPoints: 1, Status: domain.StatusTodo,
+		Epic: domain.Epic{Code: "EP-001", Title: "F"}, Priority: domain.PriorityHigh, Points: 1, Status: domain.StatusTodo,
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	title := "ghost"
-	_, err = c.UpdateStory(context.Background(), "US-404", domain.StoryUpdate{Title: &title})
+	_, err = c.UpdateSpec(context.Background(), "US-404", domain.SpecUpdate{Title: &title})
 	if err == nil {
-		t.Fatal("expected error for unknown story")
+		t.Fatal("expected error for unknown spec")
 	}
 }
 
-func TestStoryFilesStoreEpicWithCodeAndTitle(t *testing.T) {
+func TestSpecFilesStoreEpicWithCodeAndTitle(t *testing.T) {
 	c := newTestConnector(t)
-	_, err := c.SaveInitialBacklog(context.Background(), []domain.Story{{
-		Code:        "US-001",
-		Title:       "Setup",
-		Epic:        domain.Epic{Code: "EP-001", Title: "Foundations"},
-		Priority:    domain.PriorityHigh,
-		StoryPoints: 3,
-		Status:      domain.StatusTodo,
-		Body:        "## Story\n\nAs a user, I want X.",
+	_, err := c.SaveInitialBacklog(context.Background(), []domain.Spec{{
+		Code:     "US-001",
+		Title:    "Setup",
+		Epic:     domain.Epic{Code: "EP-001", Title: "Foundations"},
+		Priority: domain.PriorityHigh,
+		Points:   3,
+		Status:   domain.StatusTodo,
+		Body:     "## Spec\n\nAs a user, I want X.",
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(c.cfg.ProjectRoot, ".archetipo", "stories", "US-001.yaml"))
+	raw, err := os.ReadFile(filepath.Join(c.cfg.ProjectRoot, ".archetipo", "specs", "US-001.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(raw)
 	if !strings.Contains(text, "code: EP-001") {
-		t.Fatalf("expected epic code in story file, got:\n%s", text)
+		t.Fatalf("expected epic code in spec file, got:\n%s", text)
 	}
 	if !strings.Contains(text, "title: Foundations") {
-		t.Fatalf("expected epic title in story file, got:\n%s", text)
+		t.Fatalf("expected epic title in spec file, got:\n%s", text)
 	}
 
 	store, err := c.loadStore()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := store.Stories["US-001"].Epic.Title; got != "Foundations" {
+	if got := store.Specs["US-001"].Epic.Title; got != "Foundations" {
 		t.Fatalf("expected epic title preserved, got %q", got)
 	}
 }
 
-func TestStoryFilesReadLegacyScalarEpic(t *testing.T) {
+func TestSpecFilesReadLegacyScalarEpic(t *testing.T) {
 	c := newTestConnector(t)
-	storiesDir := filepath.Join(c.cfg.ProjectRoot, ".archetipo", "stories")
-	if err := os.MkdirAll(storiesDir, 0o755); err != nil {
+	specsDir := filepath.Join(c.cfg.ProjectRoot, ".archetipo", "specs")
+	if err := os.MkdirAll(specsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	backlog := "schema: archetipo/backlog/v2\nversion: 2\nepics:\n  - code: EP-001\n    title: Foundations\norders:\n  board: {}\n"
 	if err := os.WriteFile(filepath.Join(c.cfg.ProjectRoot, ".archetipo", "backlog.yaml"), []byte(backlog), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	legacyStory := "schema: archetipo/story/v2\ncode: US-001\ntitle: Setup\nepic: EP-001\npriority: HIGH\nstory_points: 3\nstatus: TODO\n"
-	if err := os.WriteFile(filepath.Join(storiesDir, "US-001.yaml"), []byte(legacyStory), 0o644); err != nil {
+	legacySpec := "schema: archetipo/spec/v2\ncode: US-001\ntitle: Setup\nepic: EP-001\npriority: HIGH\npoints: 3\nstatus: TODO\n"
+	if err := os.WriteFile(filepath.Join(specsDir, "US-001.yaml"), []byte(legacySpec), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -292,9 +292,9 @@ func TestStoryFilesReadLegacyScalarEpic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, ok := store.Stories["US-001"]
+	st, ok := store.Specs["US-001"]
 	if !ok {
-		t.Fatalf("story US-001 not loaded; got %+v", store.Stories)
+		t.Fatalf("spec US-001 not loaded; got %+v", store.Specs)
 	}
 	if st.Epic.Code != "EP-001" {
 		t.Errorf("epic code lost from legacy scalar: %q", st.Epic.Code)

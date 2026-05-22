@@ -32,8 +32,8 @@ type state struct {
 	project *domain.ProjectInfo
 	// items maps issue number to project item id (needed by transition_status).
 	items map[int]string
-	// stories caches project board rows for the lifetime of one CLI process.
-	stories     []domain.Story
+	// specs caches project board rows for the lifetime of one CLI process.
+	specs       []domain.Spec
 	itemsLoaded bool
 	// labels caches known label names so create_labels can avoid duplicate
 	// gh label create calls.
@@ -79,7 +79,7 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 
 // READ
 
-func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Story, error) {
+func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.Status) ([]domain.Spec, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.S
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.Story, 0, len(items))
+	out := make([]domain.Spec, 0, len(items))
 	for _, it := range items {
 		if statusFilter != "" && it.Status != statusFilter {
 			continue
@@ -97,73 +97,73 @@ func (c *Connector) FetchBacklogItems(ctx context.Context, statusFilter domain.S
 	return out, nil
 }
 
-func (c *Connector) SelectStory(ctx context.Context, q domain.SelectQuery) (domain.Story, error) {
+func (c *Connector) SelectSpec(ctx context.Context, q domain.SelectQuery) (domain.Spec, error) {
 	if err := c.ensureSetup(ctx); err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
 	items, err := c.listProjectItems(ctx)
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	if q.StoryCode != "" {
+	if q.SpecCode != "" {
 		for _, s := range items {
-			if s.Code == q.StoryCode {
-				return c.fillStoryDetail(ctx, s)
+			if s.Code == q.SpecCode {
+				return c.fillSpecDetail(ctx, s)
 			}
 		}
-		return domain.Story{}, iox.NewPrecondition(
-			fmt.Sprintf("story %s not found in project board", q.StoryCode), "", nil)
+		return domain.Spec{}, iox.NewPrecondition(
+			fmt.Sprintf("spec %s not found in project board", q.SpecCode), "", nil)
 	}
 	eligible := map[domain.Status]struct{}{}
 	for _, st := range q.EligibleStatuses {
 		eligible[st] = struct{}{}
 	}
-	candidates := make([]domain.Story, 0, len(items))
+	candidates := make([]domain.Spec, 0, len(items))
 	for _, s := range items {
 		if _, ok := eligible[s.Status]; ok {
 			candidates = append(candidates, s)
 		}
 	}
 	if len(candidates) == 0 {
-		return domain.Story{}, iox.NewPrecondition(
-			"no eligible stories in project board", "", nil)
+		return domain.Spec{}, iox.NewPrecondition(
+			"no eligible specs in project board", "", nil)
 	}
 	domain.SortByPriorityThenCode(candidates)
-	return c.fillStoryDetail(ctx, candidates[0])
+	return c.fillSpecDetail(ctx, candidates[0])
 }
 
-func (c *Connector) ReadStoryDetail(ctx context.Context, ref string) (domain.Story, error) {
+func (c *Connector) ReadSpecDetail(ctx context.Context, ref string) (domain.Spec, error) {
 	if err := c.ensureSetup(ctx); err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
 	num, err := c.resolveIssueNumber(ctx, ref)
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	story, err := c.viewIssueAsStory(ctx, num)
+	spec, err := c.viewIssueAsSpec(ctx, num)
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	// Enrich with project board data (status, priority, story points, epic).
+	// Enrich with project board data (status, priority, points, epic).
 	items, err := c.listProjectItems(ctx)
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
 	for _, item := range items {
-		if item.Ref == story.Ref {
-			story.Status = item.Status
-			story.Priority = item.Priority
-			story.StoryPoints = item.StoryPoints
-			if story.Epic.Code == "" {
-				story.Epic = item.Epic
+		if item.Ref == spec.Ref {
+			spec.Status = item.Status
+			spec.Priority = item.Priority
+			spec.Points = item.Points
+			if spec.Epic.Code == "" {
+				spec.Epic = item.Epic
 			}
 			break
 		}
 	}
-	return story, nil
+	return spec, nil
 }
 
-func (c *Connector) ReadStoryTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
+func (c *Connector) ReadSpecTasks(ctx context.Context, parentRef string) ([]domain.Task, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func (c *Connector) ReadExistingBacklog(ctx context.Context) (domain.BacklogSumm
 		return domain.BacklogSummary{}, err
 	}
 	if c.state.itemsLoaded {
-		return summarizeStories(c.state.stories), nil
+		return summarizeSpecs(c.state.specs), nil
 	}
 	var raw []struct {
 		Number int    `json:"number"`
@@ -223,10 +223,10 @@ func (c *Connector) ReadExistingBacklog(ctx context.Context) (domain.BacklogSumm
 	return out, nil
 }
 
-func summarizeStories(stories []domain.Story) domain.BacklogSummary {
+func summarizeSpecs(specs []domain.Spec) domain.BacklogSummary {
 	out := domain.BacklogSummary{}
 	seen := map[string]domain.Epic{}
-	for _, s := range stories {
+	for _, s := range specs {
 		out.Codes = append(out.Codes, s.Code)
 		out.Titles = append(out.Titles, s.Title)
 		if s.Epic.Code != "" {
@@ -256,28 +256,28 @@ func (c *Connector) SavePRD(ctx context.Context, content string) (domain.WriteRe
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Path: path}}}, nil
 }
 
-func (c *Connector) SaveInitialBacklog(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
+func (c *Connector) SaveInitialBacklog(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
 	if err := c.idempotencyCheck(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
-	return c.createStoriesAndAttach(ctx, stories)
+	return c.createSpecsAndAttach(ctx, specs)
 }
 
-func (c *Connector) AppendStories(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
+func (c *Connector) AppendSpecs(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
-	return c.createStoriesAndAttach(ctx, stories)
+	return c.createSpecsAndAttach(ctx, specs)
 }
 
-func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.PlanInput) (domain.WriteResult, error) {
+func (c *Connector) SavePlan(ctx context.Context, specRef string, plan domain.PlanInput) (domain.WriteResult, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
-	parentNum, err := c.resolveIssueNumber(ctx, storyRef)
+	parentNum, err := c.resolveIssueNumber(ctx, specRef)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
@@ -298,7 +298,7 @@ func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.P
 			break
 		}
 	}
-	refs := []domain.Ref{{Code: storyRef, Number: parentNum, URL: parent.URL}}
+	refs := []domain.Ref{{Code: specRef, Number: parentNum, URL: parent.URL}}
 	subNumbers := make([]int, 0, len(plan.Tasks))
 	subIDs := make([]int64, 0, len(plan.Tasks))
 	for _, t := range plan.Tasks {
@@ -333,11 +333,11 @@ func (c *Connector) SavePlan(ctx context.Context, storyRef string, plan domain.P
 	return domain.WriteResult{OK: true, Refs: refs}, nil
 }
 
-func (c *Connector) TransitionStatus(ctx context.Context, storyRef string, newStatus domain.Status) (domain.WriteResult, error) {
+func (c *Connector) TransitionStatus(ctx context.Context, specRef string, newStatus domain.Status) (domain.WriteResult, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
-	num, err := c.resolveIssueNumber(ctx, storyRef)
+	num, err := c.resolveIssueNumber(ctx, specRef)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
@@ -367,8 +367,8 @@ func (c *Connector) TransitionStatus(ctx context.Context, storyRef string, newSt
 	}, nil); err != nil {
 		return domain.WriteResult{}, err
 	}
-	c.updateCachedStoryStatus(num, newStatus)
-	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: storyRef, Number: num}}}, nil
+	c.updateCachedSpecStatus(num, newStatus)
+	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: specRef, Number: num}}}, nil
 }
 
 func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string) (domain.WriteResult, error) {
@@ -385,30 +385,30 @@ func (c *Connector) CompleteTask(ctx context.Context, parentRef, taskRef string)
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: taskRef, Number: num}}}, nil
 }
 
-func (c *Connector) PostComment(ctx context.Context, storyRef, body string) (domain.WriteResult, error) {
+func (c *Connector) PostComment(ctx context.Context, specRef, body string) (domain.WriteResult, error) {
 	if err := c.ensureSetup(ctx); err != nil {
 		return domain.WriteResult{}, err
 	}
-	num, err := c.resolveIssueNumber(ctx, storyRef)
+	num, err := c.resolveIssueNumber(ctx, specRef)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
 	if _, err := c.postIssueComment(ctx, num, body); err != nil {
 		return domain.WriteResult{}, err
 	}
-	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: storyRef, Number: num}}}, nil
+	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: specRef, Number: num}}}, nil
 }
 
-func (c *Connector) UpdateStory(ctx context.Context, storyRef string, patch domain.StoryUpdate) (domain.WriteResult, error) {
+func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain.SpecUpdate) (domain.WriteResult, error) {
 	return domain.WriteResult{}, iox.NewConnector(
 		iox.CodeConnectorBackend,
-		"story metadata update is not supported by the github connector yet",
+		"spec metadata update is not supported by the github connector yet",
 		"edit the issue directly on GitHub for now",
 		nil,
 	)
 }
 
-func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
+func (c *Connector) MoveBoardCard(ctx context.Context, specRef, targetColumn string, anchor domain.ReorderAnchor) (domain.WriteResult, error) {
 	statusByColumn := map[string]domain.Status{
 		"todo":        domain.StatusTodo,
 		"planned":     domain.StatusPlanned,
@@ -424,7 +424,7 @@ func (c *Connector) MoveBoardCard(ctx context.Context, storyRef, targetColumn st
 			nil,
 		)
 	}
-	return c.TransitionStatus(ctx, storyRef, status)
+	return c.TransitionStatus(ctx, specRef, status)
 }
 
 // internal helpers below
@@ -463,6 +463,10 @@ func (c *Connector) detectRepo(ctx context.Context) (*domain.RepoInfo, error) {
 // loadProjectFields fetches only the field metadata needed to resolve names
 // to ids. It intentionally avoids `gh project field-list`, which also pulls
 // project items and is very expensive in GraphQL credits.
+//
+// The custom field named "Story Points" on GitHub Projects keeps that exact
+// user-visible label — only the Go-side identifier (PointsFieldID) was renamed
+// as part of the spec/story refactoring.
 func (c *Connector) loadProjectFields(ctx context.Context, _ *domain.RepoInfo, number int, id, url string) (*domain.ProjectInfo, error) {
 	var fl struct {
 		Node struct {
@@ -508,7 +512,7 @@ func (c *Connector) loadProjectFields(ctx context.Context, _ *domain.RepoInfo, n
 				pi.Fields.PriorityOptions[o.Name] = o.ID
 			}
 		case "Story Points":
-			pi.Fields.StoryPointsFieldID = f.ID
+			pi.Fields.PointsFieldID = f.ID
 		case "Epic":
 			pi.Fields.EpicFieldID = f.ID
 			for _, o := range f.Options {
@@ -520,12 +524,12 @@ func (c *Connector) loadProjectFields(ctx context.Context, _ *domain.RepoInfo, n
 }
 
 // listProjectItems pulls all items on the board (capped at 200) and converts
-// them to []domain.Story. Caches issue->itemID mapping in c.state.items.
-func (c *Connector) listProjectItems(ctx context.Context) ([]domain.Story, error) {
+// them to []domain.Spec. Caches issue->itemID mapping in c.state.items.
+func (c *Connector) listProjectItems(ctx context.Context) ([]domain.Spec, error) {
 	if c.state.itemsLoaded {
-		return append([]domain.Story(nil), c.state.stories...), nil
+		return append([]domain.Spec(nil), c.state.specs...), nil
 	}
-	out := []domain.Story{}
+	out := []domain.Spec{}
 	after := ""
 	for {
 		var raw struct {
@@ -547,12 +551,12 @@ func (c *Connector) listProjectItems(ctx context.Context) ([]domain.Story, error
 			return nil, err
 		}
 		for _, it := range raw.Node.Items.Nodes {
-			story, ok := it.story()
+			spec, ok := it.spec()
 			if !ok {
 				continue
 			}
 			c.state.items[it.Content.Number] = it.ID
-			out = append(out, story)
+			out = append(out, spec)
 		}
 		if !raw.Node.Items.PageInfo.HasNextPage {
 			break
@@ -562,7 +566,7 @@ func (c *Connector) listProjectItems(ctx context.Context) ([]domain.Story, error
 			break
 		}
 	}
-	c.state.stories = append([]domain.Story(nil), out...)
+	c.state.specs = append([]domain.Spec(nil), out...)
 	c.state.itemsLoaded = true
 	return out, nil
 }
@@ -580,10 +584,10 @@ type projectItemNode struct {
 			} `json:"nodes"`
 		} `json:"labels"`
 	} `json:"content"`
-	Status      *projectFieldValue `json:"status"`
-	Priority    *projectFieldValue `json:"priority"`
-	StoryPoints *projectFieldValue `json:"storyPoints"`
-	Epic        *projectFieldValue `json:"epic"`
+	Status   *projectFieldValue `json:"status"`
+	Priority *projectFieldValue `json:"priority"`
+	Points   *projectFieldValue `json:"points"`
+	Epic     *projectFieldValue `json:"epic"`
 }
 
 type projectFieldValue struct {
@@ -593,13 +597,13 @@ type projectFieldValue struct {
 	Number   float64 `json:"number"`
 }
 
-func (it projectItemNode) story() (domain.Story, bool) {
+func (it projectItemNode) spec() (domain.Spec, bool) {
 	if it.Content.TypeName != "Issue" || it.Content.Number == 0 {
-		return domain.Story{}, false
+		return domain.Spec{}, false
 	}
 	code := codeFromTitle(it.Content.Title)
 	if code == "" || !it.hasLabel("archetipo-backlog") {
-		return domain.Story{}, false
+		return domain.Spec{}, false
 	}
 	status := domain.StatusTodo
 	if it.Status != nil && it.Status.Name != "" {
@@ -615,22 +619,22 @@ func (it projectItemNode) story() (domain.Story, bool) {
 		}
 	}
 	points := 0
-	if it.StoryPoints != nil {
-		points = int(it.StoryPoints.Number)
+	if it.Points != nil {
+		points = int(it.Points.Number)
 	}
 	priority := domain.Priority("")
 	if it.Priority != nil {
 		priority = domain.Priority(it.Priority.Name)
 	}
-	return domain.Story{
-		Code:        code,
-		Title:       titleAfterCode(it.Content.Title),
-		Status:      status,
-		Priority:    priority,
-		StoryPoints: points,
-		Epic:        domain.Epic{Code: epicCodeFromLabel(epicLabel), Title: epicTitleFromLabel(epicLabel)},
-		Ref:         strconv.Itoa(it.Content.Number),
-		URL:         it.Content.URL,
+	return domain.Spec{
+		Code:     code,
+		Title:    titleAfterCode(it.Content.Title),
+		Status:   status,
+		Priority: priority,
+		Points:   points,
+		Epic:     domain.Epic{Code: epicCodeFromLabel(epicLabel), Title: epicTitleFromLabel(epicLabel)},
+		Ref:      strconv.Itoa(it.Content.Number),
+		URL:      it.Content.URL,
 	}, true
 }
 
@@ -652,8 +656,8 @@ func (it projectItemNode) firstLabelWithPrefix(prefix string) string {
 	return ""
 }
 
-// fillStoryDetail enriches a story with its issue body.
-func (c *Connector) fillStoryDetail(ctx context.Context, s domain.Story) (domain.Story, error) {
+// fillSpecDetail enriches a spec with its issue body.
+func (c *Connector) fillSpecDetail(ctx context.Context, s domain.Spec) (domain.Spec, error) {
 	if s.Ref == "" {
 		return s, nil
 	}
@@ -661,25 +665,25 @@ func (c *Connector) fillStoryDetail(ctx context.Context, s domain.Story) (domain
 	if err != nil {
 		return s, nil
 	}
-	det, err := c.viewIssueAsStory(ctx, num)
+	det, err := c.viewIssueAsSpec(ctx, num)
 	if err != nil {
 		return s, err
 	}
 	det.Status = s.Status
 	det.Priority = s.Priority
-	det.StoryPoints = s.StoryPoints
+	det.Points = s.Points
 	if det.Epic.Code == "" {
 		det.Epic = s.Epic
 	}
 	return det, nil
 }
 
-func (c *Connector) viewIssueAsStory(ctx context.Context, num int) (domain.Story, error) {
+func (c *Connector) viewIssueAsSpec(ctx context.Context, num int) (domain.Spec, error) {
 	raw, err := c.viewIssueRaw(ctx, num)
 	if err != nil {
-		return domain.Story{}, err
+		return domain.Spec{}, err
 	}
-	return domain.Story{
+	return domain.Spec{
 		Code:  codeFromTitle(raw.Title),
 		Title: titleAfterCode(raw.Title),
 		Body:  raw.Body,
@@ -827,7 +831,7 @@ func (c *Connector) resolveIssueNumber(ctx context.Context, ref string) (int, er
 		}
 	}
 	return 0, iox.NewPrecondition(
-		fmt.Sprintf("story %s not found", ref), "", nil)
+		fmt.Sprintf("spec %s not found", ref), "", nil)
 }
 
 func (c *Connector) resolveSubIssueNumber(ctx context.Context, parentRef, taskRef string) (int, error) {
@@ -872,15 +876,15 @@ func (c *Connector) idempotencyCheck(ctx context.Context) error {
 	return nil
 }
 
-// createStoriesAndAttach creates one issue per story, ensures the archetipo
+// createSpecsAndAttach creates one issue per spec, ensures the archetipo
 // labels exist, adds each issue to the project board and fills the field
 // values. Returns the WriteResult with refs for every created issue.
-func (c *Connector) createStoriesAndAttach(ctx context.Context, stories []domain.Story) (domain.WriteResult, error) {
-	if err := c.ensureLabel(ctx, "archetipo-backlog", "Story generated by ARchetipo backlog", "1D76DB"); err != nil {
+func (c *Connector) createSpecsAndAttach(ctx context.Context, specs []domain.Spec) (domain.WriteResult, error) {
+	if err := c.ensureLabel(ctx, "archetipo-backlog", "Spec generated by ARchetipo backlog", "1D76DB"); err != nil {
 		return domain.WriteResult{}, err
 	}
 	epicLabels := map[string]struct{}{}
-	for _, s := range stories {
+	for _, s := range specs {
 		if s.Epic.Code != "" {
 			epicLabels[s.Epic.Code+": ["+s.Epic.Title+"]"] = struct{}{}
 		}
@@ -890,8 +894,8 @@ func (c *Connector) createStoriesAndAttach(ctx context.Context, stories []domain
 			return domain.WriteResult{}, err
 		}
 	}
-	refs := make([]domain.Ref, 0, len(stories))
-	for _, s := range stories {
+	refs := make([]domain.Ref, 0, len(specs))
+	for _, s := range specs {
 		title := s.Code + ": " + s.Title
 		labels := []string{"archetipo-backlog"}
 		if s.Epic.Code != "" {
@@ -942,12 +946,12 @@ func (c *Connector) createStoriesAndAttach(ctx context.Context, stories []domain
 				}, nil)
 			}
 		}
-		if c.state.project.Fields.StoryPointsFieldID != "" && s.StoryPoints > 0 {
+		if c.state.project.Fields.PointsFieldID != "" && s.Points > 0 {
 			_ = runGraphQL(ctx, c.runner, updateNumberFieldMutation, map[string]string{
 				"projectId": c.state.project.NodeID,
 				"itemId":    itemID,
-				"fieldId":   c.state.project.Fields.StoryPointsFieldID,
-				"value":     strconv.Itoa(s.StoryPoints),
+				"fieldId":   c.state.project.Fields.PointsFieldID,
+				"value":     strconv.Itoa(s.Points),
 			}, nil)
 		}
 	}
@@ -976,17 +980,17 @@ func (c *Connector) ensureLabel(ctx context.Context, name, description, color st
 }
 
 func (c *Connector) invalidateItemsCache() {
-	c.state.stories = nil
+	c.state.specs = nil
 	c.state.itemsLoaded = false
 }
 
-func (c *Connector) updateCachedStoryStatus(num int, status domain.Status) {
+func (c *Connector) updateCachedSpecStatus(num int, status domain.Status) {
 	if !c.state.itemsLoaded {
 		return
 	}
-	for i := range c.state.stories {
-		if c.state.stories[i].Ref == strconv.Itoa(num) {
-			c.state.stories[i].Status = status
+	for i := range c.state.specs {
+		if c.state.specs[i].Ref == strconv.Itoa(num) {
+			c.state.specs[i].Status = status
 			return
 		}
 	}

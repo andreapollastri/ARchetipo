@@ -25,7 +25,7 @@ AI coding agents are fast, but a fast answer to an isolated prompt is not the sa
 
 - **A workflow, not prompt lore.** Every phase has a skill, a role, a contract, and an output that feeds the next step.
 - **Spec-driven by default.** The `spec -> plan -> implement` loop repeats for each valuable slice until the product is done.
-- **Persistent project memory.** PRD, backlog, story files, plans, mockups, and test results live in your repo or in the configured connector.
+- **Persistent project memory.** PRD, backlog, spec files, plans, mockups, and test results live in your repo or in the configured connector.
 - **Tool-agnostic.** The same product method works with Claude Code, Codex, Gemini CLI, OpenCode, and GitHub Copilot.
 - **Language-aware.** Skills automatically follow the language of the conversation: write in English, get English artifacts; write in Italian, get Italian artifacts.
 
@@ -78,9 +78,9 @@ flowchart LR
 
     subgraph Loop["Spec-Driven Loop"]
         direction TB
-        S["<b>Spec</b><br/><i>.archetipo/backlog.yaml<br/>.archetipo/stories/</i>"] --> P["<b>Plan</b><br/><i>.archetipo/plans/</i>"]
+        S["<b>Spec</b><br/><i>.archetipo/backlog.yaml<br/>.archetipo/specs/</i>"] --> P["<b>Plan</b><br/><i>.archetipo/plans/</i>"]
         P --> IM["<b>Implement</b><br/><i>code + tests + review</i>"]
-        IM -. next story .-> S
+        IM -. next spec .-> S
     end
 
     P -. UI needed .-> D
@@ -90,21 +90,21 @@ flowchart LR
 |---|---|---|---|
 | 1. Discovery | `/archetipo-inception` | `docs/PRD.md` | Defines product vision, scope, personas, functional requirements, and core architecture. |
 | 2. Visual concept, optional | `/archetipo-design` | `docs/mockups/` | Creates isolated HTML/CSS mockups without touching application code. |
-| 3. Backlog | `/archetipo-spec` | `.archetipo/backlog.yaml`, `.archetipo/stories/` | Converts the PRD into INVEST-compliant user stories or extends an existing backlog. |
+| 3. Backlog | `/archetipo-spec` | `.archetipo/backlog.yaml`, `.archetipo/specs/` | Converts the PRD into INVEST-compliant user stories or extends an existing backlog. |
 | 4. Planning | `/archetipo-plan US-001` | `.archetipo/plans/US-001-plan.yaml` | Produces the technical solution, ordered tasks, dependencies, and test strategy. |
-| 5. Code | `/archetipo-implement US-001` | Code, tests, review notes | Executes the plan, runs tests, performs review, and moves the story toward human approval. |
+| 5. Code | `/archetipo-implement US-001` | Code, tests, review notes | Executes the plan, runs tests, performs review, and moves the spec toward human approval. |
 
 ### Workflow states
 
-Stories move through standardized states. ARchetipo automates the loop, while final acceptance stays human.
+Specs move through standardized states. ARchetipo automates the loop, while final acceptance stays human.
 
 | State | Meaning | Transition |
 |---|---|---|
-| `TODO` | Story exists in the backlog and has not been planned yet. | Created by spec |
+| `TODO` | Spec exists in the backlog and has not been planned yet. | Created by spec |
 | `PLANNED` | Technical planning is complete. | Set by plan |
 | `IN PROGRESS` | Implementation has started. | Set by implement |
 | `REVIEW` | Code review and tests are complete; ready for human review. | Set by implement |
-| `DONE` | Story accepted and released. | Manual only |
+| `DONE` | Spec accepted and released. | Manual only |
 
 ### The AI team
 
@@ -114,7 +114,7 @@ ARchetipo personas are not theater; they are lenses that make the process visibl
 |---|---|---|
 | Andrea | Product Manager | Vision, personas, MVP scope |
 | Costanza | Business Strategist | Discovery, positioning, product hypotheses |
-| Emanuele | Requirements Analyst | Acceptance criteria, edge cases, story quality |
+| Emanuele | Requirements Analyst | Acceptance criteria, edge cases, spec quality |
 | Leonardo | Architect | Technical solution and architectural decisions |
 | Ugo | Full-Stack Developer | Implementation and task breakdown |
 | Mina | Test Architect | Test strategy and coverage |
@@ -131,11 +131,11 @@ Use this decision guide inside your AI coding agent:
 |---|---|---|
 | Do you already have a PRD? | Run `/archetipo-inception`. | Continue. |
 | Do you want visual concepts before development? | Skip design for now. | Run `/archetipo-design`. |
-| Do you already have a backlog with user stories? | Run `/archetipo-spec`. | Continue. |
-| Are the stories already `PLANNED`? | Run `/archetipo-plan US-001` on a `TODO` story. | Continue. |
-| Is a story ready for implementation? | Plan it first. | Run `/archetipo-implement US-001`. |
+| Do you already have a backlog of specs? | Run `/archetipo-spec`. | Continue. |
+| Are the specs already `PLANNED`? | Run `/archetipo-plan US-001` on a `TODO` spec. | Continue. |
+| Is a spec ready for implementation? | Plan it first. | Run `/archetipo-implement US-001`. |
 
-For batch work, `/archetipo-autopilot` can run the plan and implement pipeline across eligible backlog stories with filters such as epic, priority, maximum story count, or stop conditions.
+For batch work, `/archetipo-autopilot` can run the plan and implement pipeline across eligible backlog specs with filters such as epic, priority, maximum spec count, or stop conditions.
 
 ---
 
@@ -146,18 +146,18 @@ ARchetipo uses a deterministic Go CLI, `archetipo`, for persistence and connecto
 | Command | Purpose |
 |---|---|
 | `archetipo init` | Installs ARchetipo into the current project and creates `.archetipo/config.yaml` plus `.archetipo/shared-runtime.md`. |
-| `archetipo view` | Starts a local Kanban view for `.archetipo/backlog.yaml`, `.archetipo/stories/`, and `.archetipo/plans/`. |
+| `archetipo view` | Starts a local Kanban view for `.archetipo/backlog.yaml`, `.archetipo/specs/`, and `.archetipo/plans/`. |
 | `archetipo config show` | Initializes the connector and prints metadata. |
 | `archetipo prd write [--file PRD.md]` | Saves PRD markdown from `--file` or stdin. |
 | `archetipo spec list [--status STATUS]` | Reads backlog items and summary metadata, optionally filtered by status. |
-| `archetipo spec add --file stories.yaml` | Creates or extends the backlog with user stories. |
-| `archetipo spec show US-001` | Reads one story and its tasks by code. |
-| `archetipo spec next --status TODO` | Auto-selects the first eligible story by status. |
-| `archetipo spec plan US-001 --file plan.yaml` | Saves the implementation plan and moves the story to `PLANNED`. |
-| `archetipo spec start US-001` | Moves a planned story to `IN PROGRESS`. |
-| `archetipo spec review US-001 [--file note.md]` | Moves a story to `REVIEW` and can attach a final comment. |
+| `archetipo spec add --file specs.yaml` | Creates or extends the backlog with specs (user-story body). |
+| `archetipo spec show US-001` | Reads one spec and its tasks by code. |
+| `archetipo spec next --status TODO` | Auto-selects the first eligible spec by status. |
+| `archetipo spec plan US-001 --file plan.yaml` | Saves the implementation plan and moves the spec to `PLANNED`. |
+| `archetipo spec start US-001` | Moves a planned spec to `IN PROGRESS`. |
+| `archetipo spec review US-001 [--file note.md]` | Moves a spec to `REVIEW` and can attach a final comment. |
 | `archetipo task done US-001 TASK-01` | Marks one task as completed. |
-| `archetipo spec move US-001 --to review` | Reorders or moves a story across workflow columns. |
+| `archetipo spec move US-001 --to review` | Reorders or moves a spec across workflow columns. |
 
 The CLI reads `.archetipo/config.yaml` from the project to choose the active connector and artifact paths.
 
@@ -175,7 +175,7 @@ Skills never decide where artifacts live. They apply the shared runtime rules, c
 ### `file` connector
 
 - Backlog: `.archetipo/backlog.yaml`
-- Story documents: `.archetipo/stories/US-XXX.yaml`
+- Spec documents: `.archetipo/specs/US-XXX.yaml`
 - Plans: `.archetipo/plans/US-XXX-plan.yaml`
 - PRD: `docs/PRD.md`
 - Mockups: `docs/mockups/`
@@ -186,8 +186,8 @@ No authentication is required. Everything is local and versionable.
 ### `github` connector
 
 - Backlog items become GitHub Issues on a GitHub Projects v2 board.
-- Story tasks are created as linked sub-issues.
-- Plans are added to the parent story issue body.
+- Spec tasks are created as linked sub-issues.
+- Plans are added to the parent spec issue body.
 - Status transitions are managed through Project custom fields.
 - Requires the `gh` CLI authenticated with `repo` and `project` scopes.
 
@@ -201,10 +201,10 @@ The CLI architecture is extensible, but the built-in connectors today are `file`
 |---|---|---|
 | `archetipo-inception` | Facilitates product discovery and writes the PRD. | "define the product", "product idea", "write a PRD" |
 | `archetipo-design` | Produces isolated frontend mockups in `docs/mockups/`. | "make a mockup", "dashboard concept", "landing page" |
-| `archetipo-spec` | Creates or extends the backlog from product intent. | "create the backlog", "add a story", "we need a feature for..." |
-| `archetipo-plan` | Plans one user story with architecture, tasks, dependencies, and tests. | "plan US-005", "how do we build this?", "break this into tasks" |
-| `archetipo-implement` | Executes a planned story through code, tests, review, and handoff. | "implement US-005", "run the next ready story" |
-| `archetipo-autopilot` | Runs planning and implementation across multiple eligible stories. | "run everything", "autopilot the backlog", "implement all stories" |
+| `archetipo-spec` | Creates or extends the backlog from product intent. | "create the backlog", "add a spec", "we need a feature for..." |
+| `archetipo-plan` | Plans one spec with architecture, tasks, dependencies, and tests. | "plan US-005", "how do we build this?", "break this into tasks" |
+| `archetipo-implement` | Executes a planned spec through code, tests, review, and handoff. | "implement US-005", "run the next ready spec" |
+| `archetipo-autopilot` | Runs planning and implementation across multiple eligible specs. | "run everything", "autopilot the backlog", "implement all specs" |
 
 ---
 
@@ -228,7 +228,7 @@ workflow:
     planned: PLANNED
     in_progress: IN PROGRESS
     review: REVIEW
-    done: DONE   # no skill moves a story to DONE automatically
+    done: DONE   # no skill moves a spec to DONE automatically
 
 github:
   # owner: auto-detected from repo
@@ -256,7 +256,7 @@ For a strong backlog, yes. If you do not have one yet, run `/archetipo-inception
 </details>
 
 <details>
-<summary><b>Can I add stories without rebuilding the whole backlog?</b></summary>
+<summary><b>Can I add specs without rebuilding the whole backlog?</b></summary>
 
 Yes. `/archetipo-spec` detects whether it is creating the initial backlog or extending an existing one.
 </details>
@@ -270,7 +270,7 @@ No. `/archetipo-design` writes isolated mockups in `docs/mockups/`. Implementati
 <details>
 <summary><b>Can I use ARchetipo on an existing project?</b></summary>
 
-Yes. Add or refine stories with `/archetipo-spec`, plan them with `/archetipo-plan`, then implement them with `/archetipo-implement`.
+Yes. Add or refine specs with `/archetipo-spec`, plan them with `/archetipo-plan`, then implement them with `/archetipo-implement`.
 </details>
 
 <details>

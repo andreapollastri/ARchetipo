@@ -17,16 +17,16 @@ import (
 
 // newSpecCmd builds `archetipo spec ...` with eight leaves:
 //
-//	spec add    -> idempotent backlog create-or-append (stdin: {"stories":[...]})
-//	spec show   -> read story body + tasks by code
-//	spec next   -> auto-pick first eligible story by --status (priority+code)
+//	spec add    -> idempotent backlog create-or-append (stdin: {"specs":[...]})
+//	spec show   -> read spec body + tasks by code
+//	spec next   -> auto-pick first eligible spec by --status (priority+code)
 //	spec list   -> aggregated read: items (optionally filtered) + summary metadata
 //	spec plan   -> save plan + transition TODO → PLANNED (stdin: {"plan_body","tasks"})
 //	spec start  -> transition PLANNED → IN PROGRESS (idempotent)
 //	spec review -> transition IN PROGRESS → REVIEW; --file (optional) is a closing comment
-//	spec move   -> reposition a story within the board or across workflow columns
+//	spec move   -> reposition a spec within the board or across workflow columns
 func newSpecCmd(s streams) *cobra.Command {
-	root := &cobra.Command{Use: "spec", Short: "Spec (user story) operations"}
+	root := &cobra.Command{Use: "spec", Short: "Spec operations (user story is the spec body)"}
 	root.AddCommand(
 		newSpecAddCmd(s),
 		newSpecShowCmd(s),
@@ -40,32 +40,32 @@ func newSpecCmd(s streams) *cobra.Command {
 	return root
 }
 
-// storiesPayload is the canonical stdin shape for `spec add`.
-type storiesPayload struct {
-	Schema  string         `json:"schema,omitempty"`
-	Kind    string         `json:"kind,omitempty"`
-	Stories []domain.Story `json:"stories"`
+// specsPayload is the canonical stdin shape for `spec add`.
+type specsPayload struct {
+	Schema string        `json:"schema,omitempty"`
+	Kind   string        `json:"kind,omitempty"`
+	Specs  []domain.Spec `json:"specs"`
 }
 
 func newSpecAddCmd(s streams) *cobra.Command {
 	var filePath string
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Add stories to the backlog (idempotent: skips duplicate codes)",
-		Long: "Reads a YAML or JSON payload from --file and writes the stories to the backlog. " +
-			"Creates the backlog when missing, appends otherwise. Stories whose code is " +
+		Short: "Add specs to the backlog (idempotent: skips duplicate codes)",
+		Long: "Reads a YAML or JSON payload from --file and writes the specs to the backlog. " +
+			"Creates the backlog when missing, appends otherwise. Specs whose code is " +
 			"already present are skipped and reported in data.skipped.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if filePath == "" {
-				return errInvalidUsage("missing input file", "pass --file path/to/stories.yaml or --file -")
+				return errInvalidUsage("missing input file", "pass --file path/to/specs.yaml or --file -")
 			}
-			payload, err := readStoriesPayload(s.in, filePath)
+			payload, err := readSpecsPayload(s.in, filePath)
 			if err != nil {
 				return err
 			}
 			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
-				return idempotentBacklogWrite(ctx, c, payload.Stories)
+				return idempotentBacklogWrite(ctx, c, payload.Specs)
 			})
 		},
 	}
@@ -73,13 +73,13 @@ func newSpecAddCmd(s streams) *cobra.Command {
 	return cmd
 }
 
-func readStoriesPayload(stdin io.Reader, path string) (storiesPayload, error) {
-	var p storiesPayload
+func readSpecsPayload(stdin io.Reader, path string) (specsPayload, error) {
+	var p specsPayload
 	if err := readStructuredInput(stdin, path, &p); err != nil {
-		return storiesPayload{}, err
+		return specsPayload{}, err
 	}
-	if len(p.Stories) == 0 {
-		return storiesPayload{}, iox.NewInvalidInput("no stories in input payload", "expected {stories:[...]}", nil)
+	if len(p.Specs) == 0 {
+		return specsPayload{}, iox.NewInvalidInput("no specs in input payload", "expected {specs:[...]}", nil)
 	}
 	return p, nil
 }
@@ -87,7 +87,7 @@ func readStoriesPayload(stdin io.Reader, path string) (storiesPayload, error) {
 // idempotentBacklogWrite implements the create-or-append semantics of
 // `spec add`: a fresh backlog is initialized, an existing backlog is
 // extended skipping codes already present.
-func idempotentBacklogWrite(ctx context.Context, c connector.Connector, stories []domain.Story) (domain.WriteResult, error) {
+func idempotentBacklogWrite(ctx context.Context, c connector.Connector, specs []domain.Spec) (domain.WriteResult, error) {
 	summary, err := c.ReadExistingBacklog(ctx)
 	backlogEmpty := false
 	if err != nil {
@@ -101,16 +101,16 @@ func idempotentBacklogWrite(ctx context.Context, c connector.Connector, stories 
 	}
 
 	if backlogEmpty {
-		return c.SaveInitialBacklog(ctx, stories)
+		return c.SaveInitialBacklog(ctx, specs)
 	}
 
 	existing := make(map[string]struct{}, len(summary.Codes))
 	for _, code := range summary.Codes {
 		existing[code] = struct{}{}
 	}
-	fresh := make([]domain.Story, 0, len(stories))
+	fresh := make([]domain.Spec, 0, len(specs))
 	skipped := make([]string, 0)
-	for _, st := range stories {
+	for _, st := range specs {
 		if _, ok := existing[st.Code]; ok {
 			skipped = append(skipped, st.Code)
 			continue
@@ -120,7 +120,7 @@ func idempotentBacklogWrite(ctx context.Context, c connector.Connector, stories 
 	if len(fresh) == 0 {
 		return domain.WriteResult{OK: true, Skipped: skipped}, nil
 	}
-	res, err := c.AppendStories(ctx, fresh)
+	res, err := c.AppendSpecs(ctx, fresh)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
@@ -133,23 +133,23 @@ func idempotentBacklogWrite(ctx context.Context, c connector.Connector, stories 
 func newSpecShowCmd(s streams) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show US-XXX",
-		Short: "Read a story's body and tasks by code",
-		Long:  "Looks up the story by code and returns its body and current task list.",
+		Short: "Read a spec's body and tasks by code",
+		Long:  "Looks up the spec by code and returns its body and current task list.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				return errInvalidUsage("missing story code", "pass US-XXX as positional argument")
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
 			ref := strings.TrimSpace(args[0])
 			if ref == "" {
-				return errInvalidUsage("missing story code", "pass US-XXX as positional argument")
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
-			return withConnector(cmd, s, "story", func(ctx context.Context, c connector.Connector) (any, error) {
-				st, err := c.ReadStoryDetail(ctx, ref)
+			return withConnector(cmd, s, "spec", func(ctx context.Context, c connector.Connector) (any, error) {
+				st, err := c.ReadSpecDetail(ctx, ref)
 				if err != nil {
 					return nil, err
 				}
-				return loadStoryWithTasks(ctx, c, st)
+				return loadSpecWithTasks(ctx, c, st)
 			})
 		},
 	}
@@ -159,20 +159,20 @@ func newSpecNextCmd(s streams) *cobra.Command {
 	var status string
 	cmd := &cobra.Command{
 		Use:   "next",
-		Short: "Auto-pick the first eligible story by --status (priority+code)",
-		Long: "Selects the first eligible story whose workflow status matches --status, " +
+		Short: "Auto-pick the first eligible spec by --status (priority+code)",
+		Long: "Selects the first eligible spec whose workflow status matches --status, " +
 			"ordered by priority and code, and returns its body and tasks.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if strings.TrimSpace(status) == "" {
 				return errInvalidUsage("missing --status", "pass --status TODO|PLANNED|IN PROGRESS|REVIEW|DONE")
 			}
-			return withConnector(cmd, s, "story", func(ctx context.Context, c connector.Connector) (any, error) {
-				st, err := c.SelectStory(ctx, domain.SelectQuery{EligibleStatuses: []domain.Status{domain.Status(status)}})
+			return withConnector(cmd, s, "spec", func(ctx context.Context, c connector.Connector) (any, error) {
+				st, err := c.SelectSpec(ctx, domain.SelectQuery{EligibleStatuses: []domain.Status{domain.Status(status)}})
 				if err != nil {
 					return nil, err
 				}
-				return loadStoryWithTasks(ctx, c, st)
+				return loadSpecWithTasks(ctx, c, st)
 			})
 		},
 	}
@@ -180,11 +180,11 @@ func newSpecNextCmd(s streams) *cobra.Command {
 	return cmd
 }
 
-// loadStoryWithTasks builds the `story` envelope payload shared by spec show
-// and spec next. A story without a plan reports an empty task list rather than
+// loadSpecWithTasks builds the `spec` envelope payload shared by spec show
+// and spec next. A spec without a plan reports an empty task list rather than
 // an error.
-func loadStoryWithTasks(ctx context.Context, c connector.Connector, st domain.Story) (map[string]any, error) {
-	tasks, err := c.ReadStoryTasks(ctx, st.Code)
+func loadSpecWithTasks(ctx context.Context, c connector.Connector, st domain.Spec) (map[string]any, error) {
+	tasks, err := c.ReadSpecTasks(ctx, st.Code)
 	if err != nil {
 		if ce, ok := err.(*iox.CodedError); ok && ce.Code == iox.CodePreconditionMissing {
 			tasks = []domain.Task{}
@@ -192,14 +192,14 @@ func loadStoryWithTasks(ctx context.Context, c connector.Connector, st domain.St
 			return nil, err
 		}
 	}
-	return map[string]any{"story": st, "tasks": tasks}, nil
+	return map[string]any{"spec": st, "tasks": tasks}, nil
 }
 
 func newSpecListCmd(s streams) *cobra.Command {
 	var status string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List backlog stories (optionally filtered by status) with summary metadata",
+		Short: "List backlog specs (optionally filtered by status) with summary metadata",
 		Long: "Returns {items, summary} in a single envelope. items is filtered by --status when provided; " +
 			"summary is always the full backlog metadata (codes, last_code, epics, titles).",
 		Args: cobra.NoArgs,
@@ -232,15 +232,15 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 	var filePath string
 	cmd := &cobra.Command{
 		Use:   "plan US-XXX",
-		Short: "Save the implementation plan for a story and transition to PLANNED",
+		Short: "Save the implementation plan for a spec and transition to PLANNED",
 		Long: "Reads a YAML or JSON payload from --file. " +
-			"Idempotent: re-running on a PLANNED story upserts the plan body without erroring. " +
-			"Errors with E_CONFLICT when the story is past PLANNED.",
+			"Idempotent: re-running on a PLANNED spec upserts the plan body without erroring. " +
+			"Errors with E_CONFLICT when the spec is past PLANNED.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref := strings.TrimSpace(args[0])
 			if ref == "" {
-				return errInvalidUsage("missing story code", "pass US-XXX as positional argument")
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
 			if filePath == "" {
 				return errInvalidUsage("missing input file", "pass --file path/to/plan.yaml or --file -")
@@ -250,11 +250,11 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 				return err
 			}
 			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
-				story, err := c.ReadStoryDetail(ctx, ref)
+				spec, err := c.ReadSpecDetail(ctx, ref)
 				if err != nil {
 					return nil, err
 				}
-				switch story.Status {
+				switch spec.Status {
 				case domain.StatusTodo:
 					res, err := c.SavePlan(ctx, ref, input)
 					if err != nil {
@@ -268,7 +268,7 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 					return c.SavePlan(ctx, ref, input)
 				default:
 					return nil, iox.NewConflict(
-						fmt.Sprintf("cannot plan story %s: status is %s, expected TODO or PLANNED", ref, story.Status),
+						fmt.Sprintf("cannot plan spec %s: status is %s, expected TODO or PLANNED", ref, spec.Status),
 						"inspect the current status with `archetipo spec show "+ref+"`", nil)
 				}
 			})
@@ -281,12 +281,12 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 func newSpecStartCmd(s streams) *cobra.Command {
 	return &cobra.Command{
 		Use:   "start US-XXX",
-		Short: "Transition a planned story to IN PROGRESS (idempotent)",
+		Short: "Transition a planned spec to IN PROGRESS (idempotent)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref := strings.TrimSpace(args[0])
 			if ref == "" {
-				return errInvalidUsage("missing story code", "pass US-XXX as positional argument")
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
 			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
 				return transitionWithValidation(ctx, c, ref, "start", domain.StatusPlanned, domain.StatusInProgress)
@@ -299,15 +299,15 @@ func newSpecReviewCmd(s streams) *cobra.Command {
 	var filePath string
 	cmd := &cobra.Command{
 		Use:   "review US-XXX",
-		Short: "Transition a story to REVIEW; --file (or stdin) is posted as a closing comment",
-		Long: "Transitions the story from IN PROGRESS to REVIEW and, when a non-empty body is provided " +
+		Short: "Transition a spec to REVIEW; --file (or stdin) is posted as a closing comment",
+		Long: "Transitions the spec from IN PROGRESS to REVIEW and, when a non-empty body is provided " +
 			"via --file or stdin, posts it as a closing comment on the parent issue. Connectors " +
 			"without comment support silently ignore the body.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref := strings.TrimSpace(args[0])
 			if ref == "" {
-				return errInvalidUsage("missing story code", "pass US-XXX as positional argument")
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
 			comment, err := readRawInput(s.in, filePath)
 			if err != nil {
@@ -341,7 +341,7 @@ func newSpecMoveCmd(s streams) *cobra.Command {
 	var target string
 	cmd := &cobra.Command{
 		Use:   "move US-XXX",
-		Short: "Move a story within the board or across workflow columns",
+		Short: "Move a spec within the board or across workflow columns",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if target == "" {
@@ -363,8 +363,8 @@ func newSpecMoveCmd(s streams) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&target, "to", "", "target board column: "+strings.Join(validMoveTargets, "|"))
-	cmd.Flags().StringVar(&before, "before", "", "insert before the given story code in the target column")
-	cmd.Flags().StringVar(&after, "after", "", "insert after the given story code in the target column")
+	cmd.Flags().StringVar(&before, "before", "", "insert before the given spec code in the target column")
+	cmd.Flags().StringVar(&after, "after", "", "insert after the given spec code in the target column")
 	return cmd
 }
 
@@ -378,21 +378,21 @@ func isValidMoveTarget(t string) bool {
 }
 
 // transitionWithValidation enforces the idempotent + validated transition rules
-// shared by `spec start` and `spec review`. Calling the verb when the story
+// shared by `spec start` and `spec review`. Calling the verb when the spec
 // is already at the target state is a no-op success; calling it from any
 // status other than the expected source returns E_CONFLICT.
 func transitionWithValidation(ctx context.Context, c connector.Connector, ref, verb string, source, target domain.Status) (domain.WriteResult, error) {
-	story, err := c.ReadStoryDetail(ctx, ref)
+	spec, err := c.ReadSpecDetail(ctx, ref)
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
-	if story.Status == target {
-		return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: story.Code}}}, nil
+	if spec.Status == target {
+		return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: spec.Code}}}, nil
 	}
-	if story.Status != source {
+	if spec.Status != source {
 		return domain.WriteResult{}, iox.NewConflict(
-			fmt.Sprintf("cannot %s story %s: status is %s, expected %s", verb, ref, story.Status, source),
-			fmt.Sprintf("transition the story to %s before running `archetipo spec %s`", source, verb),
+			fmt.Sprintf("cannot %s spec %s: status is %s, expected %s", verb, ref, spec.Status, source),
+			fmt.Sprintf("transition the spec to %s before running `archetipo spec %s`", source, verb),
 			nil)
 	}
 	return c.TransitionStatus(ctx, ref, target)

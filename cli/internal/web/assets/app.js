@@ -1,6 +1,9 @@
 (function () {
     'use strict';
 
+    // DOM element ids are kept with their original "story-" naming for HTML
+    // and CSS stability. The data model exposed by the API is "spec", which
+    // is reflected in variable names, payloads and envelope keys.
     const boardEl = document.getElementById('board');
     const refreshBtn = document.getElementById('refresh-btn');
     const modal = document.getElementById('modal-root');
@@ -8,16 +11,16 @@
     const modalTitle = document.getElementById('story-editor-title');
     const tabs = modal.querySelectorAll('.tab');
     const panels = modal.querySelectorAll('.tab-panel');
-    const storyForm = document.getElementById('story-form');
+    const specForm = document.getElementById('story-form');
     const planForm = document.getElementById('plan-form');
-    const storyStatus = document.getElementById('story-status');
+    const specStatus = document.getElementById('story-status');
     const planStatus = document.getElementById('plan-status');
-    const storyView = document.getElementById('story-view');
-    const storyViewMeta = document.getElementById('story-view-meta');
-    const storyViewTitle = document.getElementById('story-view-title');
-    const storyBodyView = document.getElementById('story-body-view');
-    const storyEditBtn = document.getElementById('story-edit-btn');
-    const storyCancelBtn = document.getElementById('story-cancel-btn');
+    const specView = document.getElementById('story-view');
+    const specViewMeta = document.getElementById('story-view-meta');
+    const specViewTitle = document.getElementById('story-view-title');
+    const specBodyView = document.getElementById('story-body-view');
+    const specEditBtn = document.getElementById('story-edit-btn');
+    const specCancelBtn = document.getElementById('story-cancel-btn');
     const planView = document.getElementById('plan-view');
     const planBodyView = document.getElementById('plan-body-view');
     const planTasksView = document.getElementById('plan-tasks-view');
@@ -69,8 +72,8 @@
         'preview', 'side-by-side', 'fullscreen', '|',
         'guide',
     ];
-    const storyEditor = new EasyMDE({
-        element: storyForm.body,
+    const specEditor = new EasyMDE({
+        element: specForm.body,
         spellChecker: false,
         status: false,
         autoDownloadFontAwesome: true,
@@ -97,8 +100,8 @@
         minHeight: '360px',
     });
 
-    let currentStoryCode = null;
-    let currentStorySnapshot = null; // last loaded story (for cancel + re-render after save)
+    let currentSpecCode = null;
+    let currentSpecSnapshot = null; // last loaded spec (for cancel + re-render after save)
     let currentPlanSnapshot = null; // last loaded plan (for cancel + re-render after save)
     let boardSnapshot = null; // last loaded board (for undo on failed drag)
     let currentPrdSnapshot = ''; // last loaded PRD body
@@ -113,10 +116,10 @@
         if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
     });
     tabs.forEach((t) => t.addEventListener('click', () => activateTab(t.dataset.tab)));
-    storyForm.addEventListener('submit', onSaveStory);
+    specForm.addEventListener('submit', onSaveSpec);
     planForm.addEventListener('submit', onSavePlan);
-    storyEditBtn.addEventListener('click', () => enterStoryEditMode());
-    storyCancelBtn.addEventListener('click', () => exitStoryEditMode());
+    specEditBtn.addEventListener('click', () => enterSpecEditMode());
+    specCancelBtn.addEventListener('click', () => exitSpecEditMode());
     planEditBtn.addEventListener('click', () => enterPlanEditMode());
     planCancelBtn.addEventListener('click', () => exitPlanEditMode());
     addTaskBtn.addEventListener('click', () => addTaskRow());
@@ -187,7 +190,7 @@
         const cols = view.columns || [];
         let total = 0, progress = 0, done = 0;
         cols.forEach((c) => {
-            const n = (c.stories || []).length;
+            const n = (c.specs || []).length;
             total += n;
             if (c.id === 'in_progress' || c.id === 'review') progress += n;
             if (c.id === 'done') done += n;
@@ -211,7 +214,7 @@
 
             const header = document.createElement('header');
             header.className = 'column-header';
-            const count = (col.stories || []).length;
+            const count = (col.specs || []).length;
             header.innerHTML = `
                 <span class="column-title"><span class="column-dot"></span>${escapeHtml(col.title || col.id)}</span>
                 <span class="column-count">${count}</span>
@@ -221,8 +224,8 @@
             const body = document.createElement('div');
             body.className = 'column-body';
             body.dataset.columnId = col.id;
-            (col.stories || []).forEach((s) => body.appendChild(renderCard(s)));
-            if (!col.stories || col.stories.length === 0) {
+            (col.specs || []).forEach((s) => body.appendChild(renderCard(s)));
+            if (!col.specs || col.specs.length === 0) {
                 body.appendChild(emptyHint());
             }
             columnEl.appendChild(body);
@@ -239,25 +242,25 @@
         });
     }
 
-    function renderCard(story) {
+    function renderCard(spec) {
         const el = document.createElement('article');
         el.className = 'card';
-        if (story.priority) el.classList.add('prio-' + story.priority);
-        el.dataset.code = story.code;
-        const epicCode = story.epic && story.epic.code ? story.epic.code : '';
-        const epicTooltip = story.epic && story.epic.title ? `${epicCode} — ${story.epic.title}` : epicCode;
+        if (spec.priority) el.classList.add('prio-' + spec.priority);
+        el.dataset.code = spec.code;
+        const epicCode = spec.epic && spec.epic.code ? spec.epic.code : '';
+        const epicTooltip = spec.epic && spec.epic.title ? `${epicCode} — ${spec.epic.title}` : epicCode;
         el.innerHTML = `
             <div class="card-top">
-                <span class="card-code">${escapeHtml(story.code)}</span>
-                ${story.priority ? `<span class="priority-badge priority-${escapeHtml(story.priority)}">${escapeHtml(story.priority)}</span>` : ''}
+                <span class="card-code">${escapeHtml(spec.code)}</span>
+                ${spec.priority ? `<span class="priority-badge priority-${escapeHtml(spec.priority)}">${escapeHtml(spec.priority)}</span>` : ''}
             </div>
-            <div class="card-title">${escapeHtml(story.title || '(untitled)')}</div>
+            <div class="card-title">${escapeHtml(spec.title || '(untitled)')}</div>
             <div class="card-meta">
                 <span class="card-epic" title="${escapeHtml(epicTooltip)}">${escapeHtml(epicCode)}</span>
-                <span class="card-points">${Number.isFinite(story.story_points) ? story.story_points + ' pt' : ''}</span>
+                <span class="card-points">${Number.isFinite(spec.points) ? spec.points + ' pt' : ''}</span>
             </div>
         `;
-        el.addEventListener('click', () => openEditor(story.code));
+        el.addEventListener('click', () => openEditor(spec.code));
         return el;
     }
 
@@ -294,58 +297,58 @@
     }
 
     async function openEditor(code) {
-        currentStoryCode = code;
-        modalTitle.textContent = `Story ${code}`;
+        currentSpecCode = code;
+        modalTitle.textContent = `Spec ${code}`;
         modal.classList.remove('hidden');
         activateTab('story');
-        storyStatus.textContent = 'Loading...';
+        specStatus.textContent = 'Loading...';
         planStatus.textContent = '';
-        showStoryView();
+        showSpecView();
         showPlanView();
         try {
-            const detail = await apiGet(`/api/story/${encodeURIComponent(code)}`);
-            currentStorySnapshot = detail.story || {};
+            const detail = await apiGet(`/api/spec/${encodeURIComponent(code)}`);
+            currentSpecSnapshot = detail.spec || {};
             currentPlanSnapshot = { plan_body: detail.plan_body || '', tasks: detail.tasks || [] };
-            fillStoryView(currentStorySnapshot);
-            fillStoryForm(currentStorySnapshot);
+            fillSpecView(currentSpecSnapshot);
+            fillSpecForm(currentSpecSnapshot);
             fillPlanView(currentPlanSnapshot.plan_body, currentPlanSnapshot.tasks);
             fillPlanForm(currentPlanSnapshot.plan_body, currentPlanSnapshot.tasks);
-            storyStatus.textContent = '';
+            specStatus.textContent = '';
         } catch (err) {
-            storyStatus.textContent = `Load failed: ${err.message || err}`;
-            storyStatus.className = 'status-msg err';
+            specStatus.textContent = `Load failed: ${err.message || err}`;
+            specStatus.className = 'status-msg err';
         }
     }
 
-    function fillStoryView(s) {
-        storyViewTitle.textContent = s.title || '(untitled)';
+    function fillSpecView(s) {
+        specViewTitle.textContent = s.title || '(untitled)';
         const metaParts = [];
         if (s.priority) metaParts.push(`<span class="priority-badge priority-${escapeHtml(s.priority)}">${escapeHtml(s.priority)}</span>`);
-        if (Number.isFinite(s.story_points) && s.story_points > 0) metaParts.push(`<span class="meta-chip">${s.story_points} pt</span>`);
+        if (Number.isFinite(s.points) && s.points > 0) metaParts.push(`<span class="meta-chip">${s.points} pt</span>`);
         if (s.epic && s.epic.code) {
             const epicText = s.epic.title ? `${s.epic.code} — ${s.epic.title}` : s.epic.code;
             metaParts.push(`<span class="meta-chip">${escapeHtml(epicText)}</span>`);
         }
         if (s.scope) metaParts.push(`<span class="meta-chip">${escapeHtml(s.scope)}</span>`);
         if (s.blocked_by && s.blocked_by.length) metaParts.push(`<span class="meta-chip blocked">blocked by ${escapeHtml(s.blocked_by.join(', '))}</span>`);
-        const mockup = findMockupForStory(s.code);
+        const mockup = findMockupForSpec(s.code);
         if (mockup) metaParts.push(`<a class="meta-chip mockup-link" href="${escapeHtml(mockup.url)}" target="_blank" rel="noopener">↗ mockup</a>`);
-        storyViewMeta.innerHTML = metaParts.join('');
-        storyBodyView.innerHTML = marked.parse(s.body || '*(no description)*');
+        specViewMeta.innerHTML = metaParts.join('');
+        specBodyView.innerHTML = marked.parse(s.body || '*(no description)*');
     }
 
-    function findMockupForStory(code) {
+    function findMockupForSpec(code) {
         if (!code) return null;
-        return mockupsCache.find((m) => m.story_code === code) || null;
+        return mockupsCache.find((m) => m.spec_code === code) || null;
     }
 
-    function fillStoryForm(s) {
-        storyForm.title.value = s.title || '';
-        storyForm.priority.value = s.priority || 'MEDIUM';
-        storyForm.story_points.value = s.story_points || 0;
-        storyForm.scope.value = s.scope || '';
-        storyForm.blocked_by.value = (s.blocked_by || []).join(', ');
-        storyEditor.value(s.body || '');
+    function fillSpecForm(s) {
+        specForm.title.value = s.title || '';
+        specForm.priority.value = s.priority || 'MEDIUM';
+        specForm.story_points.value = s.points || 0;
+        specForm.scope.value = s.scope || '';
+        specForm.blocked_by.value = (s.blocked_by || []).join(', ');
+        specEditor.value(s.body || '');
     }
 
     function fillPlanForm(body, tasks) {
@@ -354,23 +357,23 @@
         (tasks || []).forEach((t) => addTaskRow(t));
     }
 
-    function showStoryView() {
-        storyView.classList.remove('hidden');
-        storyForm.classList.add('hidden');
+    function showSpecView() {
+        specView.classList.remove('hidden');
+        specForm.classList.add('hidden');
     }
 
-    function enterStoryEditMode() {
-        storyView.classList.add('hidden');
-        storyForm.classList.remove('hidden');
-        storyStatus.textContent = '';
-        storyStatus.className = 'status-msg';
+    function enterSpecEditMode() {
+        specView.classList.add('hidden');
+        specForm.classList.remove('hidden');
+        specStatus.textContent = '';
+        specStatus.className = 'status-msg';
         // CodeMirror needs a refresh after being unhidden, otherwise it measures 0 height.
-        setTimeout(() => storyEditor.codemirror.refresh(), 0);
+        setTimeout(() => specEditor.codemirror.refresh(), 0);
     }
 
-    function exitStoryEditMode() {
-        if (currentStorySnapshot) fillStoryForm(currentStorySnapshot);
-        showStoryView();
+    function exitSpecEditMode() {
+        if (currentSpecSnapshot) fillSpecForm(currentSpecSnapshot);
+        showSpecView();
     }
 
     function fillPlanView(body, tasks) {
@@ -450,41 +453,41 @@
         return 'TASK-' + String(next).padStart(2, '0');
     }
 
-    async function onSaveStory(e) {
+    async function onSaveSpec(e) {
         e.preventDefault();
-        if (!currentStoryCode) return;
-        const blocked = storyForm.blocked_by.value
+        if (!currentSpecCode) return;
+        const blocked = specForm.blocked_by.value
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);
         const patch = {
-            title: storyForm.title.value,
-            priority: storyForm.priority.value,
-            story_points: parseInt(storyForm.story_points.value, 10) || 0,
-            scope: storyForm.scope.value,
+            title: specForm.title.value,
+            priority: specForm.priority.value,
+            points: parseInt(specForm.story_points.value, 10) || 0,
+            scope: specForm.scope.value,
             blocked_by: blocked,
-            body: storyEditor.value(),
+            body: specEditor.value(),
         };
-        storyStatus.textContent = 'Saving...';
-        storyStatus.className = 'status-msg';
+        specStatus.textContent = 'Saving...';
+        specStatus.className = 'status-msg';
         try {
-            await apiPut(`/api/story/${encodeURIComponent(currentStoryCode)}`, patch);
-            storyStatus.textContent = 'Saved';
-            storyStatus.className = 'status-msg ok';
-            showToast(`${currentStoryCode} updated`, 'ok');
-            currentStorySnapshot = { ...(currentStorySnapshot || {}), ...patch };
-            fillStoryView(currentStorySnapshot);
-            showStoryView();
+            await apiPut(`/api/spec/${encodeURIComponent(currentSpecCode)}`, patch);
+            specStatus.textContent = 'Saved';
+            specStatus.className = 'status-msg ok';
+            showToast(`${currentSpecCode} updated`, 'ok');
+            currentSpecSnapshot = { ...(currentSpecSnapshot || {}), ...patch };
+            fillSpecView(currentSpecSnapshot);
+            showSpecView();
             await loadBoard();
         } catch (err) {
-            storyStatus.textContent = `Save failed: ${err.message || err}`;
-            storyStatus.className = 'status-msg err';
+            specStatus.textContent = `Save failed: ${err.message || err}`;
+            specStatus.className = 'status-msg err';
         }
     }
 
     async function onSavePlan(e) {
         e.preventDefault();
-        if (!currentStoryCode) return;
+        if (!currentSpecCode) return;
         const rows = Array.from(tasksTbody.querySelectorAll('tr'));
         const tasks = rows
             .map((tr) => {
@@ -506,10 +509,10 @@
         planStatus.textContent = 'Saving...';
         planStatus.className = 'status-msg';
         try {
-            await apiPut(`/api/story/${encodeURIComponent(currentStoryCode)}/plan`, payload);
+            await apiPut(`/api/spec/${encodeURIComponent(currentSpecCode)}/plan`, payload);
             planStatus.textContent = 'Saved';
             planStatus.className = 'status-msg ok';
-            showToast(`${currentStoryCode} plan updated`, 'ok');
+            showToast(`${currentSpecCode} plan updated`, 'ok');
             currentPlanSnapshot = { plan_body: payload.plan_body, tasks: payload.tasks };
             fillPlanView(currentPlanSnapshot.plan_body, currentPlanSnapshot.tasks);
             showPlanView();
@@ -532,15 +535,15 @@
         if (name === 'plan' && !planForm.classList.contains('hidden')) {
             setTimeout(() => planEditor.codemirror.refresh(), 0);
         }
-        if (name === 'story' && !storyForm.classList.contains('hidden')) {
-            setTimeout(() => storyEditor.codemirror.refresh(), 0);
+        if (name === 'story' && !specForm.classList.contains('hidden')) {
+            setTimeout(() => specEditor.codemirror.refresh(), 0);
         }
     }
 
     function closeModal() {
         modal.classList.add('hidden');
-        currentStoryCode = null;
-        currentStorySnapshot = null;
+        currentSpecCode = null;
+        currentSpecSnapshot = null;
         currentPlanSnapshot = null;
     }
 
@@ -662,8 +665,8 @@
     }
 
     function renderMockupsMenu() {
-        const appMockups = mockupsCache.filter((m) => !m.story_code);
-        const storyMockups = mockupsCache.filter((m) => !!m.story_code);
+        const appMockups = mockupsCache.filter((m) => !m.spec_code);
+        const specMockups = mockupsCache.filter((m) => !!m.spec_code);
         mockupsMenu.innerHTML = '';
 
         const appSection = document.createElement('div');
@@ -678,8 +681,8 @@
         }
         mockupsMenu.appendChild(appSection);
 
-        if (storyMockups.length > 0) {
-            mockupsMenu.appendChild(createStoriesSection(storyMockups));
+        if (specMockups.length > 0) {
+            mockupsMenu.appendChild(createSpecsSection(specMockups));
         }
     }
 
@@ -693,7 +696,7 @@
         return a;
     }
 
-    function createStoriesSection(items) {
+    function createSpecsSection(items) {
         const section = document.createElement('div');
         section.className = 'mockups-section mockups-section-stories collapsed';
 
@@ -701,7 +704,7 @@
         header.className = 'mockups-section-header clickable';
         header.setAttribute('role', 'button');
         header.setAttribute('tabindex', '0');
-        header.innerHTML = `<span>Stories (${items.length})</span>`
+        header.innerHTML = `<span>Specs (${items.length})</span>`
             + '<svg class="mockups-section-caret" width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">'
             + '<path d="M1.5 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
 
@@ -724,7 +727,7 @@
         return section;
     }
 
-    function collapseStoriesSection() {
+    function collapseSpecsSection() {
         const section = mockupsMenu.querySelector('.mockups-section-stories');
         if (!section) return;
         section.classList.add('collapsed');
@@ -736,7 +739,7 @@
         e.stopPropagation();
         const wasHidden = mockupsMenu.classList.contains('hidden');
         mockupsMenu.classList.toggle('hidden');
-        if (wasHidden) collapseStoriesSection();
+        if (wasHidden) collapseSpecsSection();
     }
 
     function escapeHtml(s) {
