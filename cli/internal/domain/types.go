@@ -67,6 +67,16 @@ type Spec struct {
 	Ref string `json:"ref,omitempty" yaml:"ref,omitempty"`
 	// URL is set by connectors that have a web location (github).
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+	// Branch, Worktree and ForkBase are populated by `archetipo spec start`
+	// when the worktree workflow is enabled (see WorktreeConfig). Branch is the
+	// git branch the spec is implemented on; Worktree is the path (relative to
+	// the project root) of the git worktree checked out on that branch; ForkBase
+	// is the resolved SHA the branch forked from (base branch tip or a blocker
+	// branch tip for stacked specs). The review diff is `git diff
+	// <ForkBase>...<Branch>`. All empty when the worktree workflow is disabled.
+	Branch   string `json:"branch,omitempty" yaml:"branch,omitempty"`
+	Worktree string `json:"worktree,omitempty" yaml:"worktree,omitempty"`
+	ForkBase string `json:"fork_base,omitempty" yaml:"fork_base,omitempty"`
 }
 
 // Task is a unit of work inside a Spec's implementation plan.
@@ -227,4 +237,22 @@ type SpecUpdate struct {
 	BlockedBy *[]string `json:"blocked_by,omitempty"`
 	Body      *string   `json:"body,omitempty"`
 	Epic      *Epic     `json:"epic,omitempty"`
+	// Branch, Worktree and ForkBase track the git worktree the spec is
+	// implemented on. Set by `archetipo spec start` (worktree workflow). The
+	// github connector ignores them.
+	Branch   *string `json:"branch,omitempty"`
+	Worktree *string `json:"worktree,omitempty"`
+	ForkBase *string `json:"fork_base,omitempty"`
+}
+
+// WorktreeConfig mirrors the optional `worktree:` section of
+// .archetipo/config.yaml. When Enabled, `archetipo spec start` creates a
+// dedicated git branch + worktree per spec so the review diff can be isolated
+// to a single spec (`git diff <fork_base>...<branch>`) and integrated back with
+// a single merge. When disabled, the implementation flow is unchanged.
+type WorktreeConfig struct {
+	Enabled      bool   `json:"enabled" yaml:"enabled"`
+	Base         string `json:"base" yaml:"base"`
+	Dir          string `json:"dir" yaml:"dir"`
+	BranchPrefix string `json:"branch_prefix" yaml:"branch_prefix"`
 }
