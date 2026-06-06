@@ -35,6 +35,9 @@ type TaskType string
 const (
 	TaskImpl TaskType = "Impl"
 	TaskTest TaskType = "Test"
+	// TaskFix marks a task generated from review feedback ("request changes"):
+	// the comments left on the diff become Fix tasks appended to the spec plan.
+	TaskFix TaskType = "Fix"
 )
 
 // Epic identifies a group of specs. Code looks like "EP-001"; Title is
@@ -255,4 +258,23 @@ type WorktreeConfig struct {
 	Base         string `json:"base" yaml:"base"`
 	Dir          string `json:"dir" yaml:"dir"`
 	BranchPrefix string `json:"branch_prefix" yaml:"branch_prefix"`
+}
+
+// ReviewComment is a single inline comment left on the review diff, anchored to
+// a file and a line. Side is "new" for a line in the post-image (added/context
+// on the new side) or "old" for a line on the pre-image (removed side).
+type ReviewComment struct {
+	File      string `json:"file" yaml:"file"`
+	Side      string `json:"side" yaml:"side"`
+	Line      int    `json:"line" yaml:"line"`
+	Body      string `json:"body" yaml:"body"`
+	CreatedAt string `json:"created_at,omitempty" yaml:"created_at,omitempty"`
+}
+
+// Review is the set of inline comments saved for a spec under review. It is
+// persisted by the file connector at .archetipo/reviews/{code}.yaml and is
+// ephemeral: once the comments are converted into Fix tasks ("request changes")
+// the review is cleared.
+type Review struct {
+	Comments []ReviewComment `json:"comments" yaml:"comments"`
 }

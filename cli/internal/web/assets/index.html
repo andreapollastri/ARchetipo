@@ -85,6 +85,7 @@
             <nav class="modal-tabs" role="tablist">
                 <button type="button" class="tab active" data-tab="story" role="tab" aria-selected="true">Story</button>
                 <button type="button" class="tab" data-tab="plan" role="tab" aria-selected="false">Plan</button>
+                <button type="button" class="tab hidden" data-tab="review" id="review-tab" role="tab" aria-selected="false">Review</button>
             </nav>
             <section class="tab-panel active" data-panel="story">
                 <div id="story-view" class="story-view">
@@ -183,6 +184,17 @@
                         <span class="status-msg" id="plan-status"></span>
                     </div>
                 </form>
+            </section>
+            <section class="tab-panel" data-panel="review">
+                <div class="review-toolbar">
+                    <div class="review-branch" id="review-branch"></div>
+                    <div class="review-actions">
+                        <button type="button" id="review-request-btn" class="ghost-btn" title="Convert comments into Fix tasks and send the spec back to IN PROGRESS">Request changes</button>
+                        <button type="button" id="review-integrate-btn" class="primary-btn" title="Merge the branch into base and close the spec">Integrate &amp; close</button>
+                    </div>
+                </div>
+                <div class="review-diff" id="review-diff"></div>
+                <span class="status-msg" id="review-status"></span>
             </section>
         </div>
     </div>
