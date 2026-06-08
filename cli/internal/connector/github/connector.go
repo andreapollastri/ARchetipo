@@ -69,11 +69,12 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 	c.state.repo = repo
 	c.state.project = project
 	return domain.SetupInfo{
-		Connector: config.ConnectorGitHub,
-		Paths:     c.cfg.Paths,
-		Workflow:  c.cfg.Workflow,
-		Repo:      repo,
-		Project:   project,
+		Connector:   config.ConnectorGitHub,
+		ProjectRoot: c.cfg.ProjectRoot,
+		Paths:       c.cfg.Paths,
+		Workflow:    c.cfg.Workflow,
+		Repo:        repo,
+		Project:     project,
 	}, nil
 }
 

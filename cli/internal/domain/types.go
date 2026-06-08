@@ -80,6 +80,12 @@ type Spec struct {
 	Branch   string `json:"branch,omitempty" yaml:"branch,omitempty"`
 	Worktree string `json:"worktree,omitempty" yaml:"worktree,omitempty"`
 	ForkBase string `json:"fork_base,omitempty" yaml:"fork_base,omitempty"`
+	// Rework is set when the spec is sent back from review via "request changes":
+	// the inline review comments are appended to Body as a "## Rework Feedback"
+	// section and the spec returns to TODO. It is a visual marker (rendered as a
+	// badge in the board) signalling that archetipo-plan must turn that feedback
+	// into Fix tasks. Cleared automatically when the spec is re-planned.
+	Rework bool `json:"rework,omitempty" yaml:"rework,omitempty"`
 }
 
 // Task is a unit of work inside a Spec's implementation plan.
@@ -101,12 +107,13 @@ type Task struct {
 // SetupInfo is the output of initialize_connector. Fields populated depend on
 // the connector: filefs fills Paths + File; github fills Paths + Repo + Project.
 type SetupInfo struct {
-	Connector string         `json:"connector" yaml:"connector"`
-	Paths     ConfigPaths    `json:"paths" yaml:"paths"`
-	Workflow  WorkflowConfig `json:"workflow" yaml:"workflow"`
-	File      *FileConfig    `json:"file,omitempty" yaml:"file,omitempty"`
-	Repo      *RepoInfo      `json:"repo,omitempty" yaml:"repo,omitempty"`
-	Project   *ProjectInfo   `json:"project,omitempty" yaml:"project,omitempty"`
+	Connector   string         `json:"connector" yaml:"connector"`
+	ProjectRoot string         `json:"project_root" yaml:"project_root"`
+	Paths       ConfigPaths    `json:"paths" yaml:"paths"`
+	Workflow    WorkflowConfig `json:"workflow" yaml:"workflow"`
+	File        *FileConfig    `json:"file,omitempty" yaml:"file,omitempty"`
+	Repo        *RepoInfo      `json:"repo,omitempty" yaml:"repo,omitempty"`
+	Project     *ProjectInfo   `json:"project,omitempty" yaml:"project,omitempty"`
 }
 
 // ConfigPaths mirrors the shared paths section of .archetipo/config.yaml.
@@ -246,6 +253,8 @@ type SpecUpdate struct {
 	Branch   *string `json:"branch,omitempty"`
 	Worktree *string `json:"worktree,omitempty"`
 	ForkBase *string `json:"fork_base,omitempty"`
+	// Rework toggles the rework marker (see Spec.Rework).
+	Rework *bool `json:"rework,omitempty"`
 }
 
 // WorktreeConfig mirrors the optional `worktree:` section of

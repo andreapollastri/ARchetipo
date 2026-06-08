@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -119,9 +118,11 @@ func (s *Server) handleSaveReview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, review)
 }
 
-// handleRequestChanges converts the saved inline comments into Fix tasks
-// appended to the spec's plan, transitions the spec back to IN PROGRESS, and
-// clears the review (comments are ephemeral: they now live as tasks).
+// handleRequestChanges moves the saved inline comments into the spec body as a
+// "## Rework Feedback" section, flags the spec as in rework, transitions it back
+// to TODO, and clears the review. The feedback now lives inside the spec: the
+// next archetipo-plan run reads it (inside the spec's worktree) and turns each
+// item into a Fix task before re-planning.
 func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if code == "" {
@@ -143,75 +144,54 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 		writeError(w, iox.NewInvalidInput("no review comments to convert", "add inline comments before requesting changes", nil))
 		return
 	}
-	tasks, planBody, err := s.readPlanForSpec(ctx, code)
+	spec, err := s.conn.ReadSpecDetail(ctx, code)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	tasks = appendFixTasks(tasks, review.Comments)
-	if _, err := s.conn.SavePlan(ctx, code, domain.PlanInput{PlanBody: planBody, Tasks: tasks}); err != nil {
+	body := appendReworkFeedback(spec.Body, review.Comments)
+	rework := true
+	if _, err := s.conn.UpdateSpec(ctx, code, domain.SpecUpdate{Body: &body, Rework: &rework}); err != nil {
 		writeError(w, err)
 		return
 	}
-	if _, err := s.conn.TransitionStatus(ctx, code, domain.StatusInProgress); err != nil {
+	if _, err := s.conn.TransitionStatus(ctx, code, domain.StatusTodo); err != nil {
 		writeError(w, err)
 		return
 	}
-	// Clear the review: feedback now lives as Fix tasks.
+	// Clear the review: the feedback now lives in the spec body.
 	if err := rs.SaveReview(ctx, code, domain.Review{Comments: []domain.ReviewComment{}}); err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tasks_added": len(review.Comments)})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "comments_moved": len(review.Comments)})
 }
 
-// appendFixTasks turns review comments into Fix tasks appended after the
-// existing tasks, continuing the TASK-NN numbering.
-func appendFixTasks(tasks []domain.Task, comments []domain.ReviewComment) []domain.Task {
-	next := nextTaskNumber(tasks)
+// reworkFeedbackHeading is the markdown heading under which request-changes
+// records the review comments. archetipo-plan keys off this heading to detect a
+// rework cycle.
+const reworkFeedbackHeading = "## Rework Feedback"
+
+// appendReworkFeedback appends a Rework Feedback section to the spec body, one
+// bullet per review comment anchored to its file:line. archetipo-plan turns
+// each bullet into a Fix task.
+func appendReworkFeedback(body string, comments []domain.ReviewComment) string {
+	var b strings.Builder
+	if trimmed := strings.TrimRight(body, "\n"); trimmed != "" {
+		b.WriteString(trimmed)
+		b.WriteString("\n\n")
+	}
+	b.WriteString(reworkFeedbackHeading)
+	b.WriteString("\n\n<!-- Added by `archetipo view` request-changes. archetipo-plan converts each item into a Fix task. -->\n\n")
 	for _, c := range comments {
-		id := fmt.Sprintf("TASK-%02d", next)
-		next++
 		anchor := c.File
 		if c.Line > 0 {
 			anchor = fmt.Sprintf("%s:%d", c.File, c.Line)
 		}
-		tasks = append(tasks, domain.Task{
-			ID:     id,
-			Title:  summarize(c.Body),
-			Type:   domain.TaskFix,
-			Status: domain.StatusTodo,
-			Body:   fmt.Sprintf("%s\n\n%s", anchor, c.Body),
-		})
+		text := strings.ReplaceAll(strings.TrimSpace(c.Body), "\n", " ")
+		b.WriteString(fmt.Sprintf("- **%s** — %s\n", anchor, text))
 	}
-	return tasks
-}
-
-func nextTaskNumber(tasks []domain.Task) int {
-	max := 0
-	for _, t := range tasks {
-		if i := strings.LastIndexByte(t.ID, '-'); i >= 0 {
-			if n, err := strconv.Atoi(t.ID[i+1:]); err == nil && n > max {
-				max = n
-			}
-		}
-	}
-	return max + 1
-}
-
-func summarize(body string) string {
-	line := strings.TrimSpace(body)
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = line[:i]
-	}
-	const limit = 80
-	if len(line) > limit {
-		line = strings.TrimSpace(line[:limit]) + "…"
-	}
-	if line == "" {
-		line = "Review fix"
-	}
-	return line
+	return b.String()
 }
 
 // handleIntegrate merges the spec's branch into base, removes the worktree and

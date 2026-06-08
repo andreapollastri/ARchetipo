@@ -360,3 +360,70 @@ func TestGetSpec(t *testing.T) {
 		t.Errorf("expected US-001, got %+v", out.Spec)
 	}
 }
+
+func TestRequestChangesMovesCommentsIntoSpec(t *testing.T) {
+	srv, _ := newFileServer(t)
+	ctx := context.Background()
+	if _, err := srv.conn.SaveInitialBacklog(ctx, []domain.Spec{
+		{Code: "US-001", Title: "Greeting", Epic: domain.Epic{Code: "EP-001", Title: "F"}, Status: domain.StatusReview, Body: "## User Story\nas a user"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rs := srv.conn.(reviewStore)
+	if err := rs.SaveReview(ctx, "US-001", domain.Review{Comments: []domain.ReviewComment{
+		{File: "hello.txt", Line: 3, Side: "new", Body: "localize this greeting"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/spec/US-001/request-changes", nil)
+	srv.mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	spec, err := srv.conn.ReadSpecDetail(ctx, "US-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Status != domain.StatusTodo {
+		t.Errorf("expected status TODO, got %s", spec.Status)
+	}
+	if !spec.Rework {
+		t.Error("expected rework flag to be set")
+	}
+	for _, want := range []string{"## Rework Feedback", "hello.txt:3", "localize this greeting"} {
+		if !strings.Contains(spec.Body, want) {
+			t.Errorf("spec body missing %q; body=%q", want, spec.Body)
+		}
+	}
+	// Original body is preserved.
+	if !strings.Contains(spec.Body, "## User Story") {
+		t.Error("original body was discarded")
+	}
+	// Review is cleared after the comments move into the spec.
+	rev, err := rs.ReadReview(ctx, "US-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rev.Comments) != 0 {
+		t.Errorf("expected review cleared, got %d comments", len(rev.Comments))
+	}
+}
+
+func TestRequestChangesNoCommentsErrors(t *testing.T) {
+	srv, _ := newFileServer(t)
+	ctx := context.Background()
+	if _, err := srv.conn.SaveInitialBacklog(ctx, []domain.Spec{
+		{Code: "US-001", Title: "Greeting", Status: domain.StatusReview},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/api/spec/US-001/request-changes", nil)
+	srv.mux.ServeHTTP(w, r)
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected error without comments, got 200: %s", w.Body.String())
+	}
+}

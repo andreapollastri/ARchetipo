@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -147,12 +148,12 @@ func newSpecShowCmd(s streams) *cobra.Command {
 			if ref == "" {
 				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
 			}
-			return withConnector(cmd, s, "spec", func(ctx context.Context, c connector.Connector) (any, error) {
+			return withConnectorCfg(cmd, s, "spec", func(ctx context.Context, cfg config.Config, c connector.Connector) (any, error) {
 				st, err := c.ReadSpecDetail(ctx, ref)
 				if err != nil {
 					return nil, err
 				}
-				return loadSpecWithTasks(ctx, c, st)
+				return loadSpecWithTasks(ctx, cfg, c, st)
 			})
 		},
 	}
@@ -170,12 +171,12 @@ func newSpecNextCmd(s streams) *cobra.Command {
 			if strings.TrimSpace(status) == "" {
 				return errInvalidUsage("missing --status", "pass --status TODO|PLANNED|IN PROGRESS|REVIEW|DONE")
 			}
-			return withConnector(cmd, s, "spec", func(ctx context.Context, c connector.Connector) (any, error) {
+			return withConnectorCfg(cmd, s, "spec", func(ctx context.Context, cfg config.Config, c connector.Connector) (any, error) {
 				st, err := c.SelectSpec(ctx, domain.SelectQuery{EligibleStatuses: []domain.Status{domain.Status(status)}})
 				if err != nil {
 					return nil, err
 				}
-				return loadSpecWithTasks(ctx, c, st)
+				return loadSpecWithTasks(ctx, cfg, c, st)
 			})
 		},
 	}
@@ -186,7 +187,13 @@ func newSpecNextCmd(s streams) *cobra.Command {
 // loadSpecWithTasks builds the `spec` envelope payload shared by spec show
 // and spec next. A spec without a plan reports an empty task list rather than
 // an error.
-func loadSpecWithTasks(ctx context.Context, c connector.Connector, st domain.Spec) (map[string]any, error) {
+//
+// The payload also carries `workdir`: the ABSOLUTE directory a skill must use
+// as the single root for all of the spec's file and git work — the spec's git
+// worktree when one exists, the project root otherwise. It is always populated
+// so skills never branch on worktree presence. See resolveWorkdir for how it is
+// derived (filesystem state first, persisted field only as a fallback).
+func loadSpecWithTasks(ctx context.Context, cfg config.Config, c connector.Connector, st domain.Spec) (map[string]any, error) {
 	tasks, err := c.ReadSpecTasks(ctx, st.Code)
 	if err != nil {
 		if ce, ok := err.(*iox.CodedError); ok && ce.Code == iox.CodePreconditionMissing {
@@ -195,7 +202,27 @@ func loadSpecWithTasks(ctx context.Context, c connector.Connector, st domain.Spe
 			return nil, err
 		}
 	}
-	return map[string]any{"spec": st, "tasks": tasks}, nil
+	return map[string]any{"spec": st, "tasks": tasks, "workdir": resolveWorkdir(cfg, st)}, nil
+}
+
+// resolveWorkdir returns the absolute working directory for a spec. The worktree
+// workflow can leave the persisted spec.Worktree field out of sync with the real
+// git worktree (e.g. the link is dropped while the worktree still exists on
+// disk), so the actual filesystem state is the authoritative source: when the
+// worktree workflow is enabled and the conventional worktree directory exists,
+// that directory wins. Only when it is absent do we honor a recorded
+// spec.Worktree (e.g. a connector that tracks it out of band), falling back to
+// the project root. The result is always absolute and never empty.
+func resolveWorkdir(cfg config.Config, st domain.Spec) string {
+	if cfg.Worktree.Enabled {
+		if rel, exists := gitwt.Resolve(cfg.ProjectRoot, cfg.Worktree, st.Code); exists {
+			return filepath.Join(cfg.ProjectRoot, rel)
+		}
+	}
+	if st.Worktree != "" {
+		return filepath.Join(cfg.ProjectRoot, st.Worktree)
+	}
+	return cfg.ProjectRoot
 }
 
 func newSpecListCmd(s streams) *cobra.Command {
@@ -264,6 +291,12 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 						return nil, err
 					}
 					if _, err := c.TransitionStatus(ctx, ref, domain.StatusPlanned); err != nil {
+						return nil, err
+					}
+					// Re-planning clears the rework marker: the review feedback has
+					// now been turned into tasks. No-op when the spec was not in rework.
+					rework := false
+					if _, err := c.UpdateSpec(ctx, ref, domain.SpecUpdate{Rework: &rework}); err != nil {
 						return nil, err
 					}
 					return res, nil

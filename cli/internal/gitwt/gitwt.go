@@ -127,12 +127,33 @@ func UnintegratedBlockers(ctx context.Context, repoRoot string, cfg domain.Workt
 	return unmerged
 }
 
+// WorktreeRel returns the conventional worktree path (relative to repoRoot) for
+// a spec code: <cfg.Dir>/<code>. It is the single source of truth for where a
+// spec's worktree lives, used both to create it (Ensure) and to resolve it
+// later (Resolve), so the two never disagree.
+func WorktreeRel(cfg domain.WorktreeConfig, code string) string {
+	return filepath.Join(cfg.Dir, code)
+}
+
+// Resolve returns the conventional worktree path (relative to repoRoot) for a
+// spec and whether that worktree currently exists on disk. It depends only on
+// the configured convention and the filesystem — never on persisted spec
+// fields — so it stays correct even when those fields drift out of sync with
+// the actual git worktree.
+func Resolve(repoRoot string, cfg domain.WorktreeConfig, code string) (rel string, exists bool) {
+	rel = WorktreeRel(cfg, code)
+	if fi, err := os.Stat(filepath.Join(repoRoot, rel)); err == nil && fi.IsDir() {
+		return rel, true
+	}
+	return rel, false
+}
+
 // Ensure creates (idempotently) the branch and worktree for a spec forked from
 // forkRef. It returns the branch name, the worktree path (relative to
 // repoRoot), and the resolved fork-base SHA used as the diff parent.
 func Ensure(ctx context.Context, repoRoot string, cfg domain.WorktreeConfig, code, forkRef string) (branch, worktreeRel, forkBaseSHA string, err error) {
 	branch = BranchName(cfg, code)
-	worktreeRel = filepath.Join(cfg.Dir, code)
+	worktreeRel = WorktreeRel(cfg, code)
 	worktreeAbs := filepath.Join(repoRoot, worktreeRel)
 
 	forkBaseSHA, err = runGit(ctx, repoRoot, "rev-parse", forkRef)

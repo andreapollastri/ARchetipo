@@ -597,6 +597,19 @@ html[data-theme="light"] .theme-ico-moon {
     text-transform: uppercase;
 }
 
+.rework-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+    background: var(--accent-soft);
+    color: var(--accent);
+    white-space: nowrap;
+}
+
 .priority-HIGH   { background: color-mix(in srgb, var(--priority-high) 18%, transparent);   color: var(--priority-high); }
 .priority-MEDIUM { background: color-mix(in srgb, var(--priority-medium) 20%, transparent); color: var(--priority-medium); }
 .priority-LOW    { background: color-mix(in srgb, var(--priority-low) 20%, transparent);    color: var(--priority-low); }

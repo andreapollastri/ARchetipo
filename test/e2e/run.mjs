@@ -156,11 +156,18 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
     if (rawScenario.fixture !== undefined && (typeof rawScenario.fixture !== "string" || rawScenario.fixture.trim() === "")) {
       throw new Error(`scenarios.${scenarioId}.fixture must be a non-empty string when specified in ${configPath}`);
     }
-    if (rawScenario.archetipo_post_commands !== undefined && (!Array.isArray(rawScenario.archetipo_post_commands) || !rawScenario.archetipo_post_commands.every((cmd) => typeof cmd === "string" && cmd.trim() !== ""))) {
-      throw new Error(`scenarios.${scenarioId}.archetipo_post_commands must be a list of non-empty strings when specified in ${configPath}`);
+    for (const key of ["archetipo_pre_commands", "archetipo_post_commands"]) {
+      if (rawScenario[key] !== undefined && (!Array.isArray(rawScenario[key]) || !rawScenario[key].every((cmd) => typeof cmd === "string" && cmd.trim() !== ""))) {
+        throw new Error(`scenarios.${scenarioId}.${key} must be a list of non-empty strings when specified in ${configPath}`);
+      }
     }
     if (rawScenario.verify_integrate !== undefined && (!Array.isArray(rawScenario.verify_integrate) || !rawScenario.verify_integrate.every((code) => typeof code === "string" && code.trim() !== ""))) {
       throw new Error(`scenarios.${scenarioId}.verify_integrate must be a list of non-empty strings when specified in ${configPath}`);
+    }
+    for (const key of ["verify_worktree_files", "verify_integrated_files"]) {
+      if (rawScenario[key] !== undefined && (!Array.isArray(rawScenario[key]) || !rawScenario[key].every(isExpectedFile))) {
+        throw new Error(`scenarios.${scenarioId}.${key} must be a list of {path, content} objects when specified in ${configPath}`);
+      }
     }
     scenarios.push({
       id: scenarioId,
@@ -169,12 +176,23 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
       prompts: rawScenario.prompts,
       env_required: rawScenario.env_required ?? agent.env_required,
       fixture: rawScenario.fixture,
+      archetipo_pre_commands: rawScenario.archetipo_pre_commands ?? [],
       archetipo_post_commands: rawScenario.archetipo_post_commands ?? [],
       verify_integrate: rawScenario.verify_integrate ?? [],
+      verify_worktree_files: rawScenario.verify_worktree_files ?? [],
+      verify_integrated_files: rawScenario.verify_integrated_files ?? [],
     });
   }
 
   return filterScenarioList(scenarios, filterScenarios, configPath);
+}
+
+function isExpectedFile(value) {
+  return value
+    && typeof value === "object"
+    && typeof value.path === "string"
+    && value.path.trim() !== ""
+    && typeof value.content === "string";
 }
 
 function filterScenarioList(scenarios, filter, configPath) {
@@ -304,6 +322,23 @@ async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourc
     await initSandboxGitRepo(context);
     logRunStepDone(scenario.id, "git-init", "Sandbox git repository ready");
 
+    assertSandboxBinary(context);
+    for (let index = 0; index < scenario.archetipo_pre_commands.length; index += 1) {
+      const line = scenario.archetipo_pre_commands[index];
+      const step = `pre-${index + 1}`;
+      logRunStepStart(scenario.id, step, `Running archetipo ${line}`);
+      const preRun = await runReportedCommand({
+        ...context,
+        step,
+        command: context.cliBinaryPath,
+        args: line.split(/\s+/).filter(Boolean),
+      });
+      if (!preRun.ok) {
+        return finish(classifyRunFailure(context, step, preRun));
+      }
+      logRunStepDone(scenario.id, step, "Pre-command completed");
+    }
+
     for (let index = 0; index < scenario.prompts.length; index += 1) {
       const prompt = scenario.prompts[index];
       const step = `prompt-${index + 1}`;
@@ -320,7 +355,14 @@ async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourc
       logRunStepDone(scenario.id, step, "Prompt completed");
     }
 
-    assertSandboxBinary(context);
+    if (scenario.verify_worktree_files.length > 0) {
+      const code = deriveFirstSpecCode(scenario.prompts);
+      const step = `verify-worktree-files-${code}`;
+      logRunStepStart(scenario.id, step, `Verifying files were written in ${code}'s worktree`);
+      await verifyWorktreeFiles(context, code, scenario.verify_worktree_files);
+      logRunStepDone(scenario.id, step, "Worktree files verified");
+    }
+
     for (let index = 0; index < scenario.archetipo_post_commands.length; index += 1) {
       const line = scenario.archetipo_post_commands[index];
       const step = `post-${index + 1}`;
@@ -344,6 +386,13 @@ async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourc
       logRunStepDone(scenario.id, step, "Integration verified");
     }
 
+    if (scenario.verify_integrated_files.length > 0) {
+      const step = "verify-integrated-files";
+      logRunStepStart(scenario.id, step, "Verifying integrated files in the base checkout");
+      await verifyExpectedFiles(context.sandboxDir, scenario.verify_integrated_files, "base checkout");
+      logRunStepDone(scenario.id, step, "Integrated files verified");
+    }
+
     return finish({
       status: "pass",
       sandboxDir,
@@ -359,6 +408,14 @@ async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourc
       sandboxDir,
     });
   }
+}
+
+function deriveFirstSpecCode(prompts) {
+  for (const prompt of prompts) {
+    const match = String(prompt).match(/\bUS-\d+\b/);
+    if (match) return match[0];
+  }
+  throw new Error("verify_worktree_files requires a US-XXX code in the scenario prompts");
 }
 
 // copyFixture overlays a fixture directory onto the sandbox root. The fixture
@@ -444,6 +501,57 @@ async function verifyIntegration(context, code) {
   });
   if (branchProbe.ok) {
     throw new Error(`expected branch ${branch} to be deleted after integrate, but it still exists`);
+  }
+}
+
+async function verifyWorktreeFiles(context, code, expectedFiles) {
+  const show = await runReportedCommand({
+    ...context,
+    step: "verify-worktree-show",
+    command: context.cliBinaryPath,
+    args: ["spec", "show", code],
+  });
+  if (!show.ok) {
+    throw new Error(`spec show ${code} failed: ${show.stderr || show.stdout || `exit ${show.code}`}`);
+  }
+
+  let workdir = "";
+  try {
+    workdir = JSON.parse(show.stdout)?.data?.workdir ?? "";
+  } catch (err) {
+    throw new Error(`could not parse spec show ${code} output: ${err.message}`);
+  }
+  if (!workdir) {
+    throw new Error(`spec show ${code} did not return data.workdir`);
+  }
+  if (path.resolve(workdir) === path.resolve(context.sandboxDir)) {
+    throw new Error(`expected ${code} to resolve to a dedicated worktree, got project root ${workdir}`);
+  }
+
+  await verifyExpectedFiles(workdir, expectedFiles, `${code} worktree`);
+  for (const expected of expectedFiles) {
+    const rootPath = path.join(context.sandboxDir, expected.path);
+    try {
+      await fs.access(rootPath);
+    } catch {
+      continue;
+    }
+    throw new Error(`expected ${expected.path} to be absent from the base checkout before integration`);
+  }
+}
+
+async function verifyExpectedFiles(rootDir, expectedFiles, label) {
+  for (const expected of expectedFiles) {
+    const filePath = path.join(rootDir, expected.path);
+    let actual;
+    try {
+      actual = await fs.readFile(filePath, "utf8");
+    } catch (err) {
+      throw new Error(`expected ${expected.path} in ${label}, but could not read ${filePath}: ${err.message}`);
+    }
+    if (actual.trimEnd() !== expected.content.trimEnd()) {
+      throw new Error(`unexpected content for ${expected.path} in ${label}: ${JSON.stringify(actual)}`);
+    }
   }
 }
 

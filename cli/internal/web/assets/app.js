@@ -262,6 +262,7 @@
         el.innerHTML = `
             <div class="card-top">
                 <span class="card-code">${escapeHtml(spec.code)}</span>
+                ${spec.rework ? `<span class="rework-badge" title="In rework: review feedback waiting to be re-planned">⟲ rework</span>` : ''}
                 ${spec.priority ? `<span class="priority-badge priority-${escapeHtml(spec.priority)}">${escapeHtml(spec.priority)}</span>` : ''}
             </div>
             <div class="card-title">${escapeHtml(spec.title || '(untitled)')}</div>

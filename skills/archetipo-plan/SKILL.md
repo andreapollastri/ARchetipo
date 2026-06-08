@@ -41,7 +41,7 @@ Agents appear only in the **Team Brief** output. Each agent speaks **1-3 sentenc
 
 #### Step 0 — Config Loading & Connector Dispatch
 
-1. Run `archetipo config show` and parse the stdout JSON envelope; keep the `data` (SetupInfo) available.
+1. Run `archetipo config show` and parse the stdout JSON envelope; keep the `data` (SetupInfo) available. Treat `data.project_root` as the cwd for all ARchetipo connector/backlog commands in this skill.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
 3. This skill uses only these CLI operations:
    - `archetipo config show`
@@ -69,7 +69,11 @@ After selecting the spec, read ALL context in a **single turn with parallel tool
 - `{config.paths.mockups}/` contents (if exists)
 - Relevant codebase files: schema/model definition files, existing related source files, existing tests
 - If the target spec has a `Blocked by` field with values other than `-`, read those blocking specs from the backlog to understand preconditions and shared context
-- If `data.tasks` from Step 1 was non-empty, a plan already exists. Ask the user: overwrite, create a new revision, or skip. Never silently overwrite.
+- If `data.tasks` from Step 1 was non-empty, a plan already exists. In **Rework mode** (see below) do NOT ask — preserve the existing tasks and append. Otherwise ask the user: overwrite, create a new revision, or skip. Never silently overwrite.
+
+**Worktree awareness.** Apply the **Worktree Working Directory** rule from `.archetipo/shared-runtime.md`: run `config show`, `spec show`/`next`, and `spec plan` from `data.project_root`, but do ALL codebase reading and analysis (including the Rework Feedback `file:line` lookups) under `data.workdir` returned by the `spec show`/`next` call in Step 1. That directory is the spec's worktree when one exists — holding the changes already made for this spec, so the plan reflects the real current state — and the project root otherwise. Branch only on `data.workdir`, never on connector type.
+
+**Rework mode.** A spec is "in rework" when `data.spec.rework` is `true` or `data.spec.body` contains a `## Rework Feedback` section. It means the spec was sent back from review via *request changes*, with the reviewer's inline comments recorded as bullets (each anchored to a `file:line`). In this mode the feedback is the primary planning input — see the task-construction rule in STAGE 1.
 
 #### Step 3 — Announce
 
@@ -157,7 +161,7 @@ In a **single turn**, produce both:
 
 **2. Save the plan and transition the spec:**
 
-Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the spec code (e.g. `tmp-payload-US-005-plan.json`). Write the file to `.archetipo/` using your file-writing tool. Then invoke `archetipo spec plan {US-CODE} --file <path>`. After the CLI exits, delete the temp file.
+Construct the full JSON payload string in your own context (not via shell heredoc or inline script). Choose a unique temp filename using the spec code (e.g. `tmp-payload-US-005-plan.json`). Write the file to `.archetipo/` under `data.project_root` using your file-writing tool. Then invoke `archetipo spec plan {US-CODE} --file <path>` from `data.project_root`. After the CLI exits, delete the temp file.
 
 > **⚠️ Cross-platform warning:** Do NOT pipe the JSON through stdin via shell (`--file -` with shell pipe). Shell pipes are OS-dependent and can corrupt JSON that contains markdown with special characters (`` ` ``, `$`, `{`, line breaks, Unicode). Use your file-writing tool to write the JSON file first, then pass its path to `--file`.
 >
@@ -167,7 +171,13 @@ Construct the full JSON payload string in your own context (not via shell heredo
 {"plan_body":"<technical solution + test strategy as markdown>","tasks":[{"id":"TASK-01","title":"...","description":"...","type":"Impl|Test","status":"TODO","dependencies":[]}]}
 ```
 
-This single command saves the plan AND transitions the spec to `{config.workflow.statuses.planned}` atomically — no separate `status set` step is needed. The CLI persists according to the active connector (file: writes `{paths.planning}/{US-CODE}-plan.yaml`; github: appends to the parent issue body and creates one sub-issue per task). For the file connector, follow the template in `./references/plan-template.md` to compose `plan_body`.
+**Rework mode task construction.** When the spec is in rework (see Step 2), build the `tasks` array like this instead of planning from scratch:
+- **Preserve every existing task** from `data.tasks` with its current `status` (tasks already `DONE` stay `DONE`). The payload replaces the whole task list, so omitting them would lose history.
+- For **each bullet** in the `## Rework Feedback` section, read the referenced `file:line` **under `data.workdir`** (see Worktree awareness in Step 2) to understand the real code, then append one task with `"type":"Fix"`, `"status":"TODO"`, a concrete `title`, and a `description` that states what to change and why (referencing the reviewer's comment and the anchor). Continue the existing `TASK-NN` numbering.
+- Add interleaved `Test` tasks for the fixes when the change warrants verification.
+- Set `plan_body` to the existing plan body augmented with a short "Rework" note summarising the feedback being addressed; do not discard the original technical solution.
+
+This single command saves the plan AND transitions the spec to `{config.workflow.statuses.planned}` atomically (and clears the rework marker) — no separate `status set` step is needed. The CLI persists according to the active connector (file: writes `{paths.planning}/{US-CODE}-plan.yaml`; github: appends to the parent issue body and creates one sub-issue per task). For the file connector, follow the template in `./references/plan-template.md` to compose `plan_body`.
 
 Re-running the command on a spec already in `PLANNED` upserts the plan body without erroring.
 
