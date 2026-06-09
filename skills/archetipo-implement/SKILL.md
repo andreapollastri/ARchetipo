@@ -93,7 +93,7 @@ Do not avoid worker-backed execution only because a wave must be scheduled seque
 
 ### PHASE 0 - Setup, Spec Selection, and Plan Loading
 
-1. Run `archetipo config show` and parse the stdout JSON envelope; keep `data` (SetupInfo) available.
+1. Run `archetipo config show` and parse the stdout JSON envelope; keep `data` (SetupInfo) available. Treat `data.project_root` as the cwd for all ARchetipo connector/backlog commands in this skill.
 2. On failure, parse stderr as the JSON error envelope and branch on `error.code`.
 3. Load the spec and its plan with a single CLI call:
    - If a code was passed: `archetipo spec show {US-CODE}`
@@ -104,9 +104,13 @@ Do not avoid worker-backed execution only because a wave must be scheduled seque
    - If `error.code = E_PRECONDITION` (no eligible spec or auto-pick on empty queue), stop and display the template from `./references/output-templates.md` ("No planned specs" / "No backlog" as appropriate).
    - If `data.tasks` is empty, the spec has no plan yet — stop and display the template from `./references/output-templates.md` ("No implementation plan" error message).
 
-4. Load the relevant project context: agent instructions (CLAUDE.md, AGENTS.md), project config, conventions, and existing patterns in the touched area.
-5. If the plan contains UI work, scan it for mockups or design references and search `{config.paths.mockups}` for matching files. Treat explicitly referenced mockups as the source of truth.
-6. Run `archetipo spec start {US-CODE}` to transition the spec to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a spec already `IN PROGRESS` is a safe no-op.
+4. Run `archetipo spec start {US-CODE}` from `data.project_root` to transition the spec to `{config.workflow.statuses.in_progress}`. The verb is idempotent — re-running on a spec already `IN PROGRESS` is a safe no-op.
+   - Immediately after `spec start`, run `archetipo spec show {US-CODE}` again from `data.project_root`. Replace the in-memory `spec`, `tasks`, and `workdir` with this post-start envelope before reading or editing any code. This second read is mandatory because `spec start` may have just created the worktree, so the pre-start `data.workdir` can still be the project root.
+   - **Worktree workflow (optional):** when `worktree.enabled` is set in `.archetipo/config.yaml`, `spec start` also creates a dedicated git branch + worktree for the spec (forked dependency-aware from the base or a blocker branch). Apply the **Worktree Working Directory** rule from `.archetipo/shared-runtime.md`: do all implementation work — every file edit, test run, and optional local commit — under the post-start `data.workdir`, so the review diff (`git diff <fork_base>...<branch>`) stays isolated to this spec. When the spec has no worktree, `data.workdir` is the project root and nothing changes. Never branch on connector type; branch only on `data.workdir`. The final `archetipo spec review` command is the authoritative review gate: for worktree-backed specs it stages and commits any dirty or untracked worktree changes before moving the spec to review, so the branch diff is complete even if the agent did not commit manually.
+
+   - **Rework cycle:** when a spec returns from review via *request changes* it goes back to TODO with the feedback recorded in its body; after archetipo-plan re-plans it, its branch and worktree already exist. `spec start` is idempotent and reuses the existing worktree — it does not recreate anything. Resume implementation under the post-start `data.workdir` so the new Fix tasks build on the changes already committed there.
+5. Load the relevant project context under the post-start `data.workdir`: agent instructions (CLAUDE.md, AGENTS.md), project config, conventions, and existing patterns in the touched area.
+6. If the plan contains UI work, scan it for mockups or design references and search `{config.paths.mockups}` from `data.project_root` for matching files. Treat explicitly referenced mockups as the source of truth, then apply them while implementing under `data.workdir`.
 7. Announce the session briefly using the template from `./references/output-templates.md` ("Session Announcement").
 
 ### Validation policy for task parsing
@@ -141,7 +145,7 @@ For each task:
 1. Read only the relevant sections of the touched files.
 2. Follow the implementation plan unless doing so would hit an explicit blocker.
 3. Follow mockups when UI work is involved.
-4. Mark the task as done: run `archetipo task done {US-CODE} {TASK-ID}`.
+4. Mark the task as done: run `archetipo task done {US-CODE} {TASK-ID}` from `data.project_root`.
 5. Announce completion briefly.
 
 #### Ugo's rules
@@ -290,7 +294,7 @@ Do not end with the spec still in `{config.workflow.statuses.in_progress}`, and 
 ### PHASE 5 - Completion & Backlog Update
 
 1. Run the full required test suite one final time. If it fails, return to the fix loop and do not transition the spec.
-2. Pipe the completion summary markdown into `archetipo spec review {US-CODE}`. This single command transitions the spec to `{config.workflow.statuses.review}` AND posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
+2. Optionally run `git status --short` under `data.workdir` for visibility, then pipe the completion summary markdown into `archetipo spec review {US-CODE}` from `data.project_root`. This single command commits any dirty/untracked worktree changes for worktree-backed specs, transitions the spec to `{config.workflow.statuses.review}`, and posts the comment on the parent issue (or silently ignores it for connectors without comment support — never branch on connector type).
 3. Confirm completion with a concise summary. See `references/output-templates.md` for the "Completion Summary" template. If non-blocking `🟡 IMPROVEMENT` items remain open, include them in the final report under an explicit optional improvements section.
 
 ## Edge Case Handling

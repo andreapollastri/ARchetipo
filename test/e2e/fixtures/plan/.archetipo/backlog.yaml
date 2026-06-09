@@ -1,0 +1,7 @@
+schema: archetipo/backlog/v2
+version: 2
+epics:
+  - code: EP-001
+    title: Smoke test
+order:
+  - US-001

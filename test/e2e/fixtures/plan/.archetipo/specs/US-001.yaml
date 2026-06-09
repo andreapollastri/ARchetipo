@@ -1,0 +1,23 @@
+schema: archetipo/spec/v2
+code: US-001
+title: Aggiungi un file di saluto
+epic:
+  code: EP-001
+  title: Smoke test
+priority: LOW
+points: 1
+status: PLANNED
+body: |
+  ## User Story
+
+  As a maintainer, I want a trivial greeting file added to the repository
+  so that the worktree workflow can be exercised end to end quickly.
+
+  ## Acceptance Criteria
+
+  - A file `hello.txt` exists at the repository root.
+  - The file contains the single line `Hello from ARchetipo`.
+
+  ## Scope
+
+  Create one new text file. No build, dependencies, or existing files change.

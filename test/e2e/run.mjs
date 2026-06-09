@@ -13,8 +13,6 @@ const repoRoot = path.resolve(__dirname, "..", "..");
 
 const DEFAULT_CONFIG = path.join(repoRoot, "test", "e2e", "run.yaml");
 const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
-const DEFAULT_CONNECTOR = "file";
-const DEFAULT_GITHUB_REPO_PREFIX = "archetipo-e2e";
 const LONG_RUNNING_STEP_HEARTBEAT_MS = 30 * 1000;
 const PROCESS_TERMINATION_GRACE_MS = 5 * 1000;
 const DEFAULT_SCENARIO_ID = "default";
@@ -39,10 +37,9 @@ async function main() {
   const results = [];
   for (const scenario of scenarios) {
     const agentLabel = `${scenario.agent.id}`;
-    console.log(`\n==> Running scenario "${scenario.id}" (agent: ${agentLabel}, model: ${scenario.agent.model ?? "no model"}) [connector=${options.connector}]`);
+    console.log(`\n==> Running scenario "${scenario.id}" (agent: ${agentLabel}, model: ${scenario.agent.model ?? "no model"})`);
     const result = await runConfiguredScenario({
       scenario,
-      connector: options.connector,
       configPath,
       timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       cliSourceBinaryPath,
@@ -71,7 +68,6 @@ async function main() {
 function parseArgs(argv) {
   const options = {
     config: DEFAULT_CONFIG,
-    connector: DEFAULT_CONNECTOR,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -79,9 +75,6 @@ function parseArgs(argv) {
     switch (arg) {
       case "--config":
         options.config = argv[++index];
-        break;
-      case "--connector":
-        options.connector = argv[++index];
         break;
       case "--scenario":
       case "--scenarios":
@@ -100,21 +93,19 @@ function parseArgs(argv) {
     }
   }
 
-  if (!["file", "github"].includes(options.connector)) {
-    throw new Error(`Unknown connector: ${options.connector}`);
-  }
-
   return options;
 }
 
 function printHelp() {
   console.log(`ARchetipo E2E runner
 
+Each scenario is driven entirely by its fixture (the copied .archetipo/config.yaml
+decides connector, worktree, etc.).
+
 Usage:
-  node ./test/e2e/run.mjs --config test/e2e/run.yaml --connector file
-  node ./test/e2e/run.mjs --config test/e2e/run.yaml --connector github --scenario spec-plan
-  npm run test:e2e:file -- [--config test/e2e/run.yaml] [--scenario scenario-name]
-  npm run test:e2e:github -- [--config test/e2e/run.yaml] [--scenario scenario-name]
+  node ./test/e2e/run.mjs [--config test/e2e/run.yaml] [--scenario scenario-name]
+  npm run test:e2e
+  npm run test:e2e -- --scenario worktree-implement
 `);
 }
 
@@ -162,16 +153,27 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
     if (!Array.isArray(rawScenario.prompts) || rawScenario.prompts.length === 0 || !rawScenario.prompts.every((prompt) => typeof prompt === "string")) {
       throw new Error(`scenarios.${scenarioId}.prompts must be a non-empty list of strings in ${configPath}`);
     }
-    if (rawScenario.prd !== undefined && (typeof rawScenario.prd !== "string" || rawScenario.prd.trim() === "")) {
-      throw new Error(`scenarios.${scenarioId}.prd must be a non-empty string when specified in ${configPath}`);
+    if (rawScenario.fixture !== undefined && (typeof rawScenario.fixture !== "string" || rawScenario.fixture.trim() === "")) {
+      throw new Error(`scenarios.${scenarioId}.fixture must be a non-empty string when specified in ${configPath}`);
+    }
+    for (const key of ["archetipo_pre_commands", "archetipo_post_commands"]) {
+      if (rawScenario[key] !== undefined && (!Array.isArray(rawScenario[key]) || !rawScenario[key].every((cmd) => typeof cmd === "string" && cmd.trim() !== ""))) {
+        throw new Error(`scenarios.${scenarioId}.${key} must be a list of non-empty strings when specified in ${configPath}`);
+      }
+    }
+    if (rawScenario.verify_integrate !== undefined && (!Array.isArray(rawScenario.verify_integrate) || !rawScenario.verify_integrate.every((code) => typeof code === "string" && code.trim() !== ""))) {
+      throw new Error(`scenarios.${scenarioId}.verify_integrate must be a list of non-empty strings when specified in ${configPath}`);
     }
     scenarios.push({
       id: scenarioId,
       agentId,
       agent: { id: agentId, ...agent },
-      prd: rawScenario.prd,
       prompts: rawScenario.prompts,
       env_required: rawScenario.env_required ?? agent.env_required,
+      fixture: rawScenario.fixture,
+      archetipo_pre_commands: rawScenario.archetipo_pre_commands ?? [],
+      archetipo_post_commands: rawScenario.archetipo_post_commands ?? [],
+      verify_integrate: rawScenario.verify_integrate ?? [],
     });
   }
 
@@ -217,14 +219,13 @@ async function buildArchetipoBinary() {
   return binPath;
 }
 
-async function runConfiguredScenario({ scenario, connector, configPath, timeoutMs, cliSourceBinaryPath }) {
+async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourceBinaryPath }) {
   const agent = scenario.agent;
   const toolSkillRoot = TOOL_SKILL_ROOT[agent.tool];
   if (!toolSkillRoot) {
     return {
       scenario: scenario.id,
       agent: agent.id,
-      connector,
       model: agent.model,
       status: "skip",
       reason: `Unsupported installer tool '${agent.tool}'`,
@@ -239,23 +240,20 @@ async function runConfiguredScenario({ scenario, connector, configPath, timeoutM
 
   logRunStepStart(scenario.id, "workspace", `Creating sandbox at ${sandboxDir}`);
   await fs.mkdir(path.join(sandboxDir, "docs"), { recursive: true });
-  const prdSourcePath = await copyConfiguredPrd({ scenario, configPath, sandboxDir });
   const cliBinaryPath = await copyCliBinaryToSandbox({ scenario, cliSourceBinaryPath, sandboxDir });
   logRunStepDone(scenario.id, "workspace", `Sandbox ready in ${sandboxDir}`);
 
   const report = createRunReport({
     scenario,
-    connector,
     configPath,
     runRoot,
     sandboxDir,
-    prdSourcePath,
+    fixtureSourcePath: null,
     reportPath,
   });
   const context = {
     scenario,
     agent,
-    connector,
     configPath,
     runRoot,
     sandboxDir,
@@ -291,17 +289,40 @@ async function runConfiguredScenario({ scenario, connector, configPath, timeoutM
     await verifyRequiredEnv(agent);
     logRunStepDone(scenario.id, "env", "Environment looks good");
 
-    logRunStepStart(scenario.id, "bootstrap", `Preparing ${connector} workspace`);
-    await prepareWorkspace(context);
-    logRunStepDone(scenario.id, "bootstrap", `${connector} workspace ready`);
-
     logRunStepStart(scenario.id, "install", `Installing ARchetipo assets for tool '${agent.tool}'`);
     await installWorkspace(context);
     logRunStepDone(scenario.id, "install", "Installation completed");
 
-    logRunStepStart(scenario.id, "verify-install", "Checking installed files and connector config");
+    logRunStepStart(scenario.id, "verify-install", "Checking installed files");
     await verifyInstallation(context);
     logRunStepDone(scenario.id, "verify-install", "Installed files verified");
+
+    if (scenario.fixture) {
+      logRunStepStart(scenario.id, "fixture", "Overlaying fixture onto the sandbox");
+      report.fixtureSourcePath = await copyFixture(context);
+      logRunStepDone(scenario.id, "fixture", "Fixture overlay ready");
+    }
+
+    logRunStepStart(scenario.id, "git-init", "Initializing sandbox git repository");
+    await initSandboxGitRepo(context);
+    logRunStepDone(scenario.id, "git-init", "Sandbox git repository ready");
+
+    assertSandboxBinary(context);
+    for (let index = 0; index < scenario.archetipo_pre_commands.length; index += 1) {
+      const line = scenario.archetipo_pre_commands[index];
+      const step = `pre-${index + 1}`;
+      logRunStepStart(scenario.id, step, `Running archetipo ${line}`);
+      const preRun = await runReportedCommand({
+        ...context,
+        step,
+        command: context.cliBinaryPath,
+        args: line.split(/\s+/).filter(Boolean),
+      });
+      if (!preRun.ok) {
+        return finish(classifyRunFailure(context, step, preRun));
+      }
+      logRunStepDone(scenario.id, step, "Pre-command completed");
+    }
 
     for (let index = 0; index < scenario.prompts.length; index += 1) {
       const prompt = scenario.prompts[index];
@@ -317,6 +338,37 @@ async function runConfiguredScenario({ scenario, connector, configPath, timeoutM
         return finish(classifyRunFailure(context, step, promptRun));
       }
       logRunStepDone(scenario.id, step, "Prompt completed");
+    }
+
+    const integrationStates = new Map();
+    for (const code of scenario.verify_integrate) {
+      const step = `capture-integrate-state-${code}`;
+      logRunStepStart(scenario.id, step, `Capturing ${code}'s branch tip before integration`);
+      integrationStates.set(code, await captureIntegrationState(context, code, step));
+      logRunStepDone(scenario.id, step, "Integration state captured");
+    }
+
+    for (let index = 0; index < scenario.archetipo_post_commands.length; index += 1) {
+      const line = scenario.archetipo_post_commands[index];
+      const step = `post-${index + 1}`;
+      logRunStepStart(scenario.id, step, `Running archetipo ${line}`);
+      const postRun = await runReportedCommand({
+        ...context,
+        step,
+        command: context.cliBinaryPath,
+        args: line.split(/\s+/).filter(Boolean),
+      });
+      if (!postRun.ok) {
+        return finish(classifyRunFailure(context, step, postRun));
+      }
+      logRunStepDone(scenario.id, step, "Post-command completed");
+    }
+
+    for (const code of scenario.verify_integrate) {
+      const step = `verify-integrate-${code}`;
+      logRunStepStart(scenario.id, step, `Verifying ${code} reached DONE and its worktree was cleaned up`);
+      await verifyIntegration(context, code, integrationStates.get(code), step);
+      logRunStepDone(scenario.id, step, "Integration verified");
     }
 
     return finish({
@@ -336,27 +388,167 @@ async function runConfiguredScenario({ scenario, connector, configPath, timeoutM
   }
 }
 
-async function copyConfiguredPrd({ scenario, configPath, sandboxDir }) {
-  if (!scenario.prd) {
-    return null;
-  }
+// copyFixture overlays a fixture directory onto the sandbox root. The fixture
+// can carry anything the scenario needs as starting state: `docs/PRD.md`, an
+// `.archetipo/` tree (config + backlog + specs + plans), etc. The `.archetipo/
+// config.yaml` it brings overwrites the one `init` produced, so it is the
+// fixture — not a CLI flag — that decides connector, worktree, and the rest. The
+// fixture path is resolved relative to the config file.
+async function copyFixture({ scenario, configPath, sandboxDir }) {
+  const sourcePath = path.resolve(path.dirname(configPath), scenario.fixture.trim());
 
-  const sourcePath = path.resolve(path.dirname(configPath), scenario.prd.trim());
-  const targetDir = path.join(sandboxDir, "docs");
-  const targetPath = path.join(targetDir, "PRD.md");
-
-  await fs.mkdir(targetDir, { recursive: true });
   try {
-    await fs.copyFile(sourcePath, targetPath);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      throw new Error(`Configured PRD not found: ${sourcePath}`);
+    await fs.access(sourcePath);
+  } catch {
+    throw new Error(`Configured fixture not found: ${sourcePath}`);
+  }
+  await fs.cp(sourcePath, sandboxDir, { recursive: true, force: true });
+  logRunStepDetail(scenario.id, "fixture", `Overlaid fixture ${sourcePath} -> ${sandboxDir}`);
+  return sourcePath;
+}
+
+// assertSandboxBinary guards that archetipo_post_commands run the CLI compiled
+// for and copied into the sandbox, never a binary that happens to be on PATH.
+function assertSandboxBinary({ cliBinaryPath, sandboxDir }) {
+  const resolvedBinary = path.resolve(cliBinaryPath);
+  const resolvedSandbox = path.resolve(sandboxDir);
+  if (resolvedBinary !== resolvedSandbox && !resolvedBinary.startsWith(resolvedSandbox + path.sep)) {
+    throw new Error(`Sandbox CLI binary ${resolvedBinary} is not inside the sandbox ${resolvedSandbox}`);
+  }
+}
+
+// initSandboxGitRepo turns the sandbox into a git repository with a `main`
+// branch carrying a single empty commit. The empty base commit avoids tracking
+// the copied CLI binary while still giving `spec start` a base branch to fork
+// the per-spec worktree from. Identity is set on the local repo config so the
+// linked worktrees the agent commits in inherit it.
+async function initSandboxGitRepo(context) {
+  const steps = [
+    ["init", "-b", "main"],
+    ["config", "user.email", "archetipo-e2e@example.com"],
+    ["config", "user.name", "ARchetipo E2E"],
+    ["commit", "--allow-empty", "-m", "chore: e2e sandbox base"],
+  ];
+  for (let index = 0; index < steps.length; index += 1) {
+    const args = steps[index];
+    const run = await runReportedCommand({
+      ...context,
+      step: `git-init-${index + 1}`,
+      command: "git",
+      args,
+    });
+    if (!run.ok) {
+      throw new Error(`Sandbox git ${args[0]} failed: ${run.stderr || run.stdout || `exit ${run.code}`}`);
     }
-    throw error;
+  }
+}
+
+async function captureIntegrationState(context, code, step) {
+  const show = await runReportedCommand({
+    ...context,
+    step,
+    command: context.cliBinaryPath,
+    args: ["spec", "show", code],
+  });
+  if (!show.ok) {
+    throw new Error(`spec show ${code} failed: ${show.stderr || show.stdout || `exit ${show.code}`}`);
+  }
+  let spec;
+  try {
+    spec = JSON.parse(show.stdout)?.data?.spec;
+  } catch (err) {
+    throw new Error(`could not parse spec show ${code} output: ${err.message}`);
+  }
+  const branch = spec?.branch || `archetipo/${code}`;
+  const worktree = spec?.worktree || "";
+  if (!worktree) {
+    throw new Error(`spec show ${code} did not return data.spec.worktree before integrate`);
   }
 
-  logRunStepDetail(scenario.id, "workspace", `Copied PRD ${sourcePath} -> ${targetPath}`);
-  return sourcePath;
+  const tipProbe = await runProbe("git", ["rev-parse", "--verify", "--quiet", `${branch}^{commit}`], {
+    cwd: context.sandboxDir,
+  });
+  if (!tipProbe.ok) {
+    throw new Error(`expected branch ${branch} to exist before integrate, but could not resolve its tip`);
+  }
+
+  return {
+    branch,
+    branchTip: tipProbe.stdout.trim(),
+    worktree,
+    worktreeAbs: resolveSandboxPath(context.sandboxDir, worktree),
+  };
+}
+
+// verifyIntegration confirms the round-trip closed: the spec reached DONE, the
+// branch tip is reachable from main, and the per-spec branch/worktree are gone.
+async function verifyIntegration(context, code, beforeIntegrate, step) {
+  if (!beforeIntegrate?.branchTip) {
+    throw new Error(`missing pre-integrate branch tip for ${code}`);
+  }
+
+  const show = await runReportedCommand({
+    ...context,
+    step,
+    command: context.cliBinaryPath,
+    args: ["spec", "show", code],
+  });
+  if (!show.ok) {
+    throw new Error(`spec show ${code} failed: ${show.stderr || show.stdout || `exit ${show.code}`}`);
+  }
+  let spec;
+  try {
+    spec = JSON.parse(show.stdout)?.data?.spec;
+  } catch (err) {
+    throw new Error(`could not parse spec show ${code} output: ${err.message}`);
+  }
+  const status = spec?.status ?? "";
+  if (status !== "DONE") {
+    throw new Error(`expected ${code} to be DONE after integrate, got ${status || "(empty)"}`);
+  }
+
+  const ancestorProbe = await runProbe("git", ["merge-base", "--is-ancestor", beforeIntegrate.branchTip, "main"], {
+    cwd: context.sandboxDir,
+  });
+  if (!ancestorProbe.ok) {
+    throw new Error(`expected pre-integrate tip ${beforeIntegrate.branchTip} for ${code} to be reachable from main`);
+  }
+
+  const branch = spec?.branch || beforeIntegrate.branch || `archetipo/${code}`;
+  const branchProbe = await runProbe("git", ["rev-parse", "--verify", "--quiet", `${branch}^{commit}`], {
+    cwd: context.sandboxDir,
+  });
+  if (branchProbe.ok) {
+    throw new Error(`expected branch ${branch} to be deleted after integrate, but it still exists`);
+  }
+
+  const worktreeAbs = resolveSandboxPath(context.sandboxDir, spec?.worktree || beforeIntegrate.worktree);
+  try {
+    await fs.access(worktreeAbs);
+    throw new Error(`expected worktree directory ${worktreeAbs} to be removed after integrate`);
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      throw err;
+    }
+  }
+
+  const worktreeList = await runProbe("git", ["worktree", "list", "--porcelain"], {
+    cwd: context.sandboxDir,
+  });
+  if (!worktreeList.ok) {
+    throw new Error(`git worktree list --porcelain failed: ${worktreeList.stderr || worktreeList.stdout || `exit ${worktreeList.code}`}`);
+  }
+  const listedWorktrees = worktreeList.stdout
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => path.resolve(line.slice("worktree ".length)));
+  if (listedWorktrees.includes(path.resolve(worktreeAbs))) {
+    throw new Error(`expected git worktree list --porcelain to omit ${worktreeAbs}`);
+  }
+}
+
+function resolveSandboxPath(sandboxDir, value) {
+  return path.resolve(path.isAbsolute(value) ? value : path.join(sandboxDir, value));
 }
 
 async function copyCliBinaryToSandbox({ scenario, cliSourceBinaryPath, sandboxDir }) {
@@ -416,20 +608,11 @@ async function verifyRequiredEnv(agent) {
   }
 }
 
-async function prepareWorkspace(context) {
-  if (context.connector !== "github") {
-    return;
-  }
-
-  logRunStepDetail(context.scenario.id, "bootstrap", "Checking GitHub prerequisites");
-  await verifyGitHubPrerequisites(context);
-  logRunStepDetail(context.scenario.id, "bootstrap", "Provisioning temporary GitHub repository");
-  await provisionGitHubRepository(context);
-  logRunStepDetail(context.scenario.id, "bootstrap", "Initializing git sandbox");
-  await bootstrapSandboxGit(context);
-}
-
 async function installWorkspace(context) {
+  // `init` needs a connector non-interactively (`--yes` doesn't cover the
+  // connector prompt), so we pass a `file` default. It's only a baseline: a
+  // fixture carrying its own `.archetipo/config.yaml` (e.g. the worktree
+  // scenario) overwrites it, so the fixture stays authoritative.
   const install = await runReportedCommand({
     ...context,
     step: "install",
@@ -439,7 +622,7 @@ async function installWorkspace(context) {
       "--tool",
       context.agent.tool,
       "--connector",
-      context.connector,
+      "file",
       "--yes",
     ],
   });
@@ -460,12 +643,6 @@ async function verifyInstallation(context) {
     } catch {
       throw new Error(`Expected installation artifact missing: ${requiredPath}`);
     }
-  }
-
-  const configText = await fs.readFile(path.join(context.sandboxDir, ".archetipo", "config.yaml"), "utf8");
-  const connectorPattern = new RegExp(`^connector:\\s*${context.connector}\\b`, "m");
-  if (!connectorPattern.test(configText)) {
-    throw new Error(`Installed config.yaml does not use connector: ${context.connector}.`);
   }
 }
 
@@ -594,16 +771,14 @@ async function runReportedCommand({
   };
 }
 
-function createRunReport({ scenario, connector, configPath, runRoot, sandboxDir, prdSourcePath, reportPath }) {
+function createRunReport({ scenario, configPath, runRoot, sandboxDir, fixtureSourcePath, reportPath }) {
   return {
     startedAt: Date.now(),
     scenario: scenario.id,
     agent: scenario.agent.id,
-    connector,
-    githubRepo: null,
     model: scenario.agent.model,
     configPath,
-    prdSourcePath,
+    fixtureSourcePath,
     runRoot,
     sandboxDir,
     reportPath,
@@ -620,7 +795,6 @@ function inferCommandKind({ cliBinaryPath, command }) {
 }
 
 async function writeHtmlReport(context) {
-  context.report.githubRepo = context.githubRepo ?? null;
   context.report.endedAt = Date.now();
   const html = renderHtmlReport(context.report);
   await fs.writeFile(context.reportPath, html);
@@ -696,13 +870,12 @@ function renderHtmlReport(report) {
       <div class="meta">
         ${renderMeta("Scenario", report.scenario)}
         ${renderMeta("Agent", report.agent)}
-        ${renderMeta("Connector", report.connector)}
         ${renderMeta("Model", report.model)}
         ${renderMeta("Status", result.status ?? "unknown")}
         ${renderMeta("Duration", formatDurationMs(durationMs))}
         ${renderMeta("Sandbox", report.sandboxDir)}
         ${renderMeta("Config", report.configPath)}
-        ${renderMeta("PRD Source", report.prdSourcePath)}
+        ${renderMeta("Fixture", report.fixtureSourcePath)}
       </div>
       <div class="skills">
         <span class="badge ${escapeHtml(result.status ?? "skip")}">status ${escapeHtml(result.status ?? "unknown")}</span>
@@ -829,154 +1002,6 @@ async function ensureCommand(command) {
   return { skip: false };
 }
 
-async function verifyGitHubPrerequisites(context) {
-  const ghCommand = await ensureCommand("gh");
-  if (ghCommand.skip) {
-    throw new SkipError("GitHub connector requires the 'gh' CLI to be installed.");
-  }
-
-  const gitCommand = await ensureCommand("git");
-  if (gitCommand.skip) {
-    throw new SkipError("GitHub connector requires the 'git' CLI to be installed.");
-  }
-
-  const authStatus = await runProbe("gh", ["auth", "status"]);
-  if (!authStatus.ok) {
-    throw new SkipError("GitHub connector requires an authenticated 'gh' session.");
-  }
-}
-
-async function provisionGitHubRepository(context) {
-  const owner = await getGitHubViewerLogin();
-  if (!owner) {
-    throw new SkipError("GitHub connector requires a resolvable GitHub owner for the test repository.");
-  }
-
-  const repoName = buildDefaultGitHubRepoName(context);
-  const repoSlug = `${owner}/${repoName}`;
-  const repoUrl = `https://github.com/${repoSlug}.git`;
-  const projectTitle = `${repoName} Backlog`;
-
-  const existingRepo = await runProbe("gh", ["repo", "view", repoSlug, "--json", "nameWithOwner"]);
-  if (existingRepo.ok) {
-    const deleteRepo = await runProbe("gh", ["repo", "delete", repoSlug, "--yes"]);
-    if (!deleteRepo.ok) {
-      throw new Error(`Failed to delete existing GitHub repo ${repoSlug}: ${deleteRepo.stderr || deleteRepo.stdout || `exit ${deleteRepo.code}`}`);
-    }
-  }
-
-  await deleteProjectByTitle(owner, projectTitle);
-
-  const createRepo = await runProbe("gh", [
-    "repo",
-    "create",
-    repoSlug,
-    "--private",
-    "--disable-wiki",
-    "--description",
-    `ARchetipo E2E sandbox for ${context.scenario.id}`,
-  ]);
-  if (!createRepo.ok) {
-    throw new Error(`Failed to create GitHub repo ${repoSlug}: ${createRepo.stderr || createRepo.stdout || `exit ${createRepo.code}`}`);
-  }
-
-  context.githubRepo = {
-    owner,
-    projectTitle,
-    repoName,
-    repoSlug,
-    repoUrl,
-  };
-}
-
-async function bootstrapSandboxGit(context) {
-  const remoteUrl = context.githubRepo?.repoUrl;
-  if (!remoteUrl) {
-    throw new Error("GitHub sandbox bootstrap is missing the provisioned remote repository URL.");
-  }
-
-  const gitInit = await runReportedCommand({
-    ...context,
-    step: "git-init",
-    command: "git",
-    args: ["init", "-b", "main"],
-  });
-  if (!gitInit.ok) {
-    throw new Error(`Sandbox git init failed: ${gitInit.stderr || gitInit.stdout || `exit ${gitInit.code}`}`);
-  }
-
-  const gitRemote = await runReportedCommand({
-    ...context,
-    step: "git-remote",
-    command: "git",
-    args: ["remote", "add", "origin", remoteUrl],
-  });
-  if (!gitRemote.ok) {
-    throw new Error(`Sandbox git remote setup failed: ${gitRemote.stderr || gitRemote.stdout || `exit ${gitRemote.code}`}`);
-  }
-}
-
-async function getGitHubViewerLogin() {
-  const viewer = await runProbe("gh", ["api", "user"]);
-  if (!viewer.ok) {
-    return "";
-  }
-  try {
-    const parsed = JSON.parse(viewer.stdout);
-    return parsed.login ?? "";
-  } catch {
-    return "";
-  }
-}
-
-async function deleteProjectByTitle(owner, projectTitle) {
-  const list = await runProbe("gh", [
-    "project",
-    "list",
-    "--owner",
-    owner,
-    "--format",
-    "json",
-    "--limit",
-    "100",
-  ]);
-  if (!list.ok) {
-    throw new Error(`Failed to list GitHub projects for ${owner}: ${list.stderr || list.stdout || `exit ${list.code}`}`);
-  }
-
-  let projects = [];
-  try {
-    projects = JSON.parse(list.stdout).projects ?? [];
-  } catch (error) {
-    throw new Error(`Failed to parse GitHub project list JSON: ${error.message}`);
-  }
-
-  for (const project of projects) {
-    if (project.title !== projectTitle) {
-      continue;
-    }
-    const remove = await runProbe("gh", ["project", "delete", String(project.number), "--owner", owner]);
-    if (!remove.ok) {
-      throw new Error(`Failed to delete existing GitHub project '${projectTitle}': ${remove.stderr || remove.stdout || `exit ${remove.code}`}`);
-    }
-  }
-}
-
-function buildDefaultGitHubRepoName(context) {
-  return sanitizeGitHubName([
-    DEFAULT_GITHUB_REPO_PREFIX,
-    context.scenario.id,
-  ].join("-"));
-}
-
-function sanitizeGitHubName(value) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 async function runProbe(command, args, options = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
@@ -1038,8 +1063,6 @@ function finalizeResult(context, result) {
     return {
       scenario: context.scenario.id,
       agent: context.agent.id,
-      connector: context.connector,
-      githubRepo: context.githubRepo,
       model: context.agent.model,
       status: "skip",
       reason: result.message,
@@ -1053,8 +1076,6 @@ function finalizeResult(context, result) {
   return {
     scenario: context.scenario.id,
     agent: context.agent.id,
-    connector: context.connector,
-    githubRepo: context.githubRepo,
     model: context.agent.model,
     status: result.status,
     reason: result.reason,
@@ -1068,7 +1089,7 @@ function finalizeResult(context, result) {
 function formatResultLine(result) {
   const scenarioLabel = result.scenario ?? "?";
   const agentLabel = result.agent ?? "?";
-  const base = `${scenarioLabel} (agent: ${agentLabel}, model: ${result.model ?? "no model"}) [connector=${result.connector ?? DEFAULT_CONNECTOR}] -> ${result.status.toUpperCase()}`;
+  const base = `${scenarioLabel} (agent: ${agentLabel}, model: ${result.model ?? "no model"}) -> ${result.status.toUpperCase()}`;
   if (result.reason) {
     return `${base} - ${result.reason}`;
   }

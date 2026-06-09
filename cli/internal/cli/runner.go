@@ -48,3 +48,29 @@ func withConnector(cmd *cobra.Command, s streams, kind string, fn func(ctx conte
 	}
 	return nil
 }
+
+// withConnectorCfg is like withConnector but also passes the loaded config to
+// the callback. Used by operations that need config beyond the connector (e.g.
+// the worktree workflow needs ProjectRoot and the worktree settings).
+func withConnectorCfg(cmd *cobra.Command, s streams, kind string, fn func(ctx context.Context, cfg config.Config, c connector.Connector) (any, error)) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return iox.NewInternal("cwd unavailable", err)
+	}
+	cfg, err := config.Load(cwd)
+	if err != nil {
+		return iox.NewInvalidInput(err.Error(), "fix the file or remove it to fall back to defaults", err)
+	}
+	conn, err := connector.New(cfg)
+	if err != nil {
+		return iox.NewInvalidInput("connector unavailable", "check `connector:` in .archetipo/config.yaml", err)
+	}
+	data, err := fn(cmd.Context(), cfg, conn)
+	if err != nil {
+		return err
+	}
+	if err := iox.WriteOK(s.out, kind, data); err != nil {
+		return iox.NewInternal("encoding output", err)
+	}
+	return nil
+}

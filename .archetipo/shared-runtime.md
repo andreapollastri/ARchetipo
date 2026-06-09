@@ -31,6 +31,20 @@ Common rules:
   - `4`: missing precondition
 - When `.archetipo/config.yaml` is absent, the CLI applies its built-in defaults for connector, paths, and workflow statuses.
 - Command-specific invocation forms, payloads, and semantics belong in each skill that uses them. Do not infer CLI operations from documentation files.
+- `archetipo config show` returns `data.project_root`: the ABSOLUTE project root containing `.archetipo/config.yaml` (or the current directory when defaults are used). Run connector/backlog commands from this root unless a command-specific rule says otherwise.
+
+## Worktree Working Directory
+
+Specs may be implemented inside a per-spec git worktree (worktree workflow). To make every skill operate on the right files **deterministically** — never depending on the model remembering to prefix paths — the spec envelope carries the resolved working directory.
+
+`archetipo spec show <US-CODE>` and `archetipo spec next` return `data.workdir`: the ABSOLUTE directory for that spec — the spec's git worktree when one exists on disk, the project root otherwise. It is always populated, and the CLI derives it from the actual filesystem state (not from a stored field that could drift). After resolving a spec, treat `data.workdir` as the single root for ALL of that spec's file work:
+
+- every file you read, edit, search or create for the spec must live under `data.workdir`;
+- run every shell/git/test command for the spec with `data.workdir` as the working directory.
+
+Connector commands (`archetipo spec plan`, `archetipo task done`, `archetipo spec review`, etc.) still operate on backlog/config state and must be run from `data.project_root` from `config show`. Work on the codebase for a spec happens under `data.workdir`.
+
+When the spec has no worktree, `data.workdir` is just the project root and nothing changes. Branch only on this value — never on connector type. (`data.spec.worktree` is the raw, project-root-relative field; always prefer `data.workdir`, which is absolute and filesystem-checked.) If a command such as `archetipo spec start` may create a worktree, run `archetipo spec show <US-CODE>` again afterwards and replace the in-memory spec/tasks/workdir with that post-start envelope before touching files.
 
 ## Language Policy
 

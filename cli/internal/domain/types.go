@@ -35,6 +35,9 @@ type TaskType string
 const (
 	TaskImpl TaskType = "Impl"
 	TaskTest TaskType = "Test"
+	// TaskFix marks a task generated from review feedback ("request changes"):
+	// the comments left on the diff become Fix tasks appended to the spec plan.
+	TaskFix TaskType = "Fix"
 )
 
 // Epic identifies a group of specs. Code looks like "EP-001"; Title is
@@ -67,6 +70,22 @@ type Spec struct {
 	Ref string `json:"ref,omitempty" yaml:"ref,omitempty"`
 	// URL is set by connectors that have a web location (github).
 	URL string `json:"url,omitempty" yaml:"url,omitempty"`
+	// Branch, Worktree and ForkBase are populated by `archetipo spec start`
+	// when the worktree workflow is enabled (see WorktreeConfig). Branch is the
+	// git branch the spec is implemented on; Worktree is the path (relative to
+	// the project root) of the git worktree checked out on that branch; ForkBase
+	// is the resolved SHA the branch forked from (base branch tip or a blocker
+	// branch tip for stacked specs). The review diff is `git diff
+	// <ForkBase>...<Branch>`. All empty when the worktree workflow is disabled.
+	Branch   string `json:"branch,omitempty" yaml:"branch,omitempty"`
+	Worktree string `json:"worktree,omitempty" yaml:"worktree,omitempty"`
+	ForkBase string `json:"fork_base,omitempty" yaml:"fork_base,omitempty"`
+	// Rework is set when the spec is sent back from review via "request changes":
+	// the inline review comments are appended to Body as a "## Rework Feedback"
+	// section and the spec returns to TODO. It is a visual marker (rendered as a
+	// badge in the board) signalling that archetipo-plan must turn that feedback
+	// into Fix tasks. Cleared automatically when the spec is re-planned.
+	Rework bool `json:"rework,omitempty" yaml:"rework,omitempty"`
 }
 
 // Task is a unit of work inside a Spec's implementation plan.
@@ -88,12 +107,13 @@ type Task struct {
 // SetupInfo is the output of initialize_connector. Fields populated depend on
 // the connector: filefs fills Paths + File; github fills Paths + Repo + Project.
 type SetupInfo struct {
-	Connector string         `json:"connector" yaml:"connector"`
-	Paths     ConfigPaths    `json:"paths" yaml:"paths"`
-	Workflow  WorkflowConfig `json:"workflow" yaml:"workflow"`
-	File      *FileConfig    `json:"file,omitempty" yaml:"file,omitempty"`
-	Repo      *RepoInfo      `json:"repo,omitempty" yaml:"repo,omitempty"`
-	Project   *ProjectInfo   `json:"project,omitempty" yaml:"project,omitempty"`
+	Connector   string         `json:"connector" yaml:"connector"`
+	ProjectRoot string         `json:"project_root" yaml:"project_root"`
+	Paths       ConfigPaths    `json:"paths" yaml:"paths"`
+	Workflow    WorkflowConfig `json:"workflow" yaml:"workflow"`
+	File        *FileConfig    `json:"file,omitempty" yaml:"file,omitempty"`
+	Repo        *RepoInfo      `json:"repo,omitempty" yaml:"repo,omitempty"`
+	Project     *ProjectInfo   `json:"project,omitempty" yaml:"project,omitempty"`
 }
 
 // ConfigPaths mirrors the shared paths section of .archetipo/config.yaml.
@@ -227,4 +247,43 @@ type SpecUpdate struct {
 	BlockedBy *[]string `json:"blocked_by,omitempty"`
 	Body      *string   `json:"body,omitempty"`
 	Epic      *Epic     `json:"epic,omitempty"`
+	// Branch, Worktree and ForkBase track the git worktree the spec is
+	// implemented on. Set by `archetipo spec start` (worktree workflow). The
+	// github connector ignores them.
+	Branch   *string `json:"branch,omitempty"`
+	Worktree *string `json:"worktree,omitempty"`
+	ForkBase *string `json:"fork_base,omitempty"`
+	// Rework toggles the rework marker (see Spec.Rework).
+	Rework *bool `json:"rework,omitempty"`
+}
+
+// WorktreeConfig mirrors the optional `worktree:` section of
+// .archetipo/config.yaml. When Enabled, `archetipo spec start` creates a
+// dedicated git branch + worktree per spec so the review diff can be isolated
+// to a single spec (`git diff <fork_base>...<branch>`) and integrated back with
+// a single merge. When disabled, the implementation flow is unchanged.
+type WorktreeConfig struct {
+	Enabled      bool   `json:"enabled" yaml:"enabled"`
+	Base         string `json:"base" yaml:"base"`
+	Dir          string `json:"dir" yaml:"dir"`
+	BranchPrefix string `json:"branch_prefix" yaml:"branch_prefix"`
+}
+
+// ReviewComment is a single inline comment left on the review diff, anchored to
+// a file and a line. Side is "new" for a line in the post-image (added/context
+// on the new side) or "old" for a line on the pre-image (removed side).
+type ReviewComment struct {
+	File      string `json:"file" yaml:"file"`
+	Side      string `json:"side" yaml:"side"`
+	Line      int    `json:"line" yaml:"line"`
+	Body      string `json:"body" yaml:"body"`
+	CreatedAt string `json:"created_at,omitempty" yaml:"created_at,omitempty"`
+}
+
+// Review is the set of inline comments saved for a spec under review. It is
+// persisted by the file connector at .archetipo/reviews/{code}.yaml and is
+// ephemeral: once the comments are converted into Fix tasks ("request changes")
+// the review is cleared.
+type Review struct {
+	Comments []ReviewComment `json:"comments" yaml:"comments"`
 }

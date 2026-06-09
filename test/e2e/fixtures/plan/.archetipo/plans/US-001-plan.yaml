@@ -1,0 +1,14 @@
+schema: archetipo/plan/v2
+spec_code: US-001
+body: |
+  Trivial single-task plan: create a new file `hello.txt` at the repository
+  root containing exactly one line `Hello from ARchetipo`. No tests or build
+  changes are required beyond verifying the file content.
+tasks:
+  - id: T1
+    title: Create hello.txt at the repository root
+    type: Impl
+    status: TODO
+    description: |
+      Create a file named `hello.txt` at the root of the checkout containing
+      the single line `Hello from ARchetipo`.

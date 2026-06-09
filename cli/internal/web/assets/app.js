@@ -45,6 +45,12 @@
     const statTotal = document.getElementById('stat-total');
     const statProgress = document.getElementById('stat-progress');
     const statDone = document.getElementById('stat-done');
+    const reviewTab = document.getElementById('review-tab');
+    const reviewBranch = document.getElementById('review-branch');
+    const reviewDiff = document.getElementById('review-diff');
+    const reviewStatus = document.getElementById('review-status');
+    const reviewRequestBtn = document.getElementById('review-request-btn');
+    const reviewIntegrateBtn = document.getElementById('review-integrate-btn');
 
     const THEME_KEY = 'archetipo.theme';
 
@@ -101,6 +107,8 @@
     });
 
     let currentSpecCode = null;
+    let reviewComments = []; // inline comments for the spec currently under review
+    let reviewLoaded = false; // whether the review tab has been loaded for this spec
     let currentSpecSnapshot = null; // last loaded spec (for cancel + re-render after save)
     let currentPlanSnapshot = null; // last loaded plan (for cancel + re-render after save)
     let boardSnapshot = null; // last loaded board (for undo on failed drag)
@@ -123,6 +131,8 @@
     planEditBtn.addEventListener('click', () => enterPlanEditMode());
     planCancelBtn.addEventListener('click', () => exitPlanEditMode());
     addTaskBtn.addEventListener('click', () => addTaskRow());
+    reviewRequestBtn.addEventListener('click', onRequestChanges);
+    reviewIntegrateBtn.addEventListener('click', onIntegrate);
 
     prdBtn.addEventListener('click', openPRD);
     prdModalClose.addEventListener('click', closePRD);
@@ -252,6 +262,7 @@
         el.innerHTML = `
             <div class="card-top">
                 <span class="card-code">${escapeHtml(spec.code)}</span>
+                ${spec.rework ? `<span class="rework-badge" title="In rework: review feedback waiting to be re-planned">⟲ rework</span>` : ''}
                 ${spec.priority ? `<span class="priority-badge priority-${escapeHtml(spec.priority)}">${escapeHtml(spec.priority)}</span>` : ''}
             </div>
             <div class="card-title">${escapeHtml(spec.title || '(untitled)')}</div>
@@ -259,6 +270,7 @@
                 <span class="card-epic" title="${escapeHtml(epicTooltip)}">${escapeHtml(epicCode)}</span>
                 <span class="card-points">${Number.isFinite(spec.points) ? spec.points + ' pt' : ''}</span>
             </div>
+            ${spec.branch ? `<div class="card-branch" title="git branch">⎇ ${escapeHtml(spec.branch)}</div>` : ''}
         `;
         el.addEventListener('click', () => openEditor(spec.code));
         return el;
@@ -305,6 +317,8 @@
         planStatus.textContent = '';
         showSpecView();
         showPlanView();
+        reviewLoaded = false;
+        reviewComments = [];
         try {
             const detail = await apiGet(`/api/spec/${encodeURIComponent(code)}`);
             currentSpecSnapshot = detail.spec || {};
@@ -313,6 +327,7 @@
             fillSpecForm(currentSpecSnapshot);
             fillPlanView(currentPlanSnapshot.plan_body, currentPlanSnapshot.tasks);
             fillPlanForm(currentPlanSnapshot.plan_body, currentPlanSnapshot.tasks);
+            updateReviewTabVisibility(currentSpecSnapshot);
             specStatus.textContent = '';
         } catch (err) {
             specStatus.textContent = `Load failed: ${err.message || err}`;
@@ -538,6 +553,9 @@
         if (name === 'story' && !specForm.classList.contains('hidden')) {
             setTimeout(() => specEditor.codemirror.refresh(), 0);
         }
+        if (name === 'review' && !reviewLoaded) {
+            loadReview();
+        }
     }
 
     function closeModal() {
@@ -545,6 +563,9 @@
         currentSpecCode = null;
         currentSpecSnapshot = null;
         currentPlanSnapshot = null;
+        reviewComments = [];
+        reviewLoaded = false;
+        reviewTab.classList.add('hidden');
     }
 
     function showToast(msg, kind) {
@@ -553,6 +574,230 @@
         if (kind) toast.classList.add(kind);
         clearTimeout(showToast._t);
         showToast._t = setTimeout(() => toast.classList.add('hidden'), 2200);
+    }
+
+    // ---- Review (diff + inline comments) -----------------------------------
+
+    function updateReviewTabVisibility(spec) {
+        const inReview = spec && spec.status === 'REVIEW';
+        reviewTab.classList.toggle('hidden', !inReview);
+        if (!inReview && reviewTab.classList.contains('active')) {
+            activateTab('story');
+        }
+    }
+
+    function commentKey(file, side, line) {
+        return `${file}|${side}|${line}`;
+    }
+
+    async function loadReview() {
+        reviewLoaded = true;
+        reviewStatus.textContent = '';
+        reviewStatus.className = 'status-msg';
+        reviewDiff.innerHTML = '<div class="review-empty">Loading diff…</div>';
+        try {
+            const [diff, review] = await Promise.all([
+                apiGet(`/api/spec/${encodeURIComponent(currentSpecCode)}/diff`),
+                apiGet(`/api/spec/${encodeURIComponent(currentSpecCode)}/review`),
+            ]);
+            reviewComments = (review && review.comments) || [];
+            renderReviewBranch(diff);
+            renderDiff(diff);
+        } catch (err) {
+            reviewLoaded = false;
+            reviewDiff.innerHTML = `<div class="review-empty">Error: ${escapeHtml(err.message || err)}</div>`;
+        }
+    }
+
+    function renderReviewBranch(diff) {
+        const parts = [];
+        if (diff.branch) parts.push(`<span class="review-chip">⎇ ${escapeHtml(diff.branch)}</span>`);
+        parts.push(`<span class="review-chip">base ${escapeHtml(diff.base || '')}</span>`);
+        if (diff.branch) parts.push(`<span class="review-chip">+${diff.ahead || 0} / −${diff.behind || 0}</span>`);
+        reviewBranch.innerHTML = parts.join('');
+    }
+
+    function renderDiff(diff) {
+        reviewDiff.innerHTML = '';
+        const files = diff.files || [];
+        if (files.length === 0) {
+            reviewDiff.innerHTML = '<div class="review-empty">No changes in this diff.</div>';
+            return;
+        }
+        files.forEach((file) => reviewDiff.appendChild(renderFileDiff(file)));
+        renderAllComments();
+    }
+
+    function renderFileDiff(file) {
+        const path = file.new_path || file.old_path || '(unknown)';
+        const wrap = document.createElement('div');
+        wrap.className = 'diff-file';
+        const header = document.createElement('div');
+        header.className = 'diff-file-header';
+        header.innerHTML = `<span class="diff-file-status diff-${escapeHtml(file.status || 'modified')}">${escapeHtml(file.status || 'modified')}</span><span class="diff-file-path">${escapeHtml(path)}</span>`;
+        wrap.appendChild(header);
+        (file.hunks || []).forEach((hunk) => {
+            const hh = document.createElement('div');
+            hh.className = 'diff-hunk-header';
+            hh.textContent = hunk.header;
+            wrap.appendChild(hh);
+            (hunk.lines || []).forEach((line) => wrap.appendChild(renderDiffLine(path, file, line)));
+        });
+        return wrap;
+    }
+
+    function renderDiffLine(path, file, line) {
+        const row = document.createElement('div');
+        row.className = `diff-line diff-${line.kind}`;
+        const side = line.new_line > 0 ? 'new' : 'old';
+        const lineNo = side === 'new' ? line.new_line : line.old_line;
+        const anchorFile = side === 'old' ? (file.old_path || path) : path;
+        row.dataset.file = anchorFile;
+        row.dataset.side = side;
+        row.dataset.line = String(lineNo);
+        const sign = line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ' ';
+        row.innerHTML = `
+            <span class="diff-gutter old">${line.old_line > 0 ? line.old_line : ''}</span>
+            <span class="diff-gutter new">${line.new_line > 0 ? line.new_line : ''}</span>
+            <span class="diff-comment-add" title="Add comment">+</span>
+            <span class="diff-sign">${sign}</span>
+            <span class="diff-code">${escapeHtml(line.text)}</span>
+        `;
+        row.querySelector('.diff-comment-add').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openComposer(row, anchorFile, side, lineNo);
+        });
+        return row;
+    }
+
+    function renderAllComments() {
+        // Remove existing comment blocks then re-attach from state.
+        reviewDiff.querySelectorAll('.diff-comment-block').forEach((n) => n.remove());
+        reviewComments.forEach((c) => {
+            const row = findLineRow(c.file, c.side, c.line);
+            if (row) insertCommentBlock(row, c);
+        });
+    }
+
+    function findLineRow(file, side, line) {
+        return reviewDiff.querySelector(`.diff-line[data-file="${cssEscape(file)}"][data-side="${side}"][data-line="${line}"]`);
+    }
+
+    function insertCommentBlock(row, comment) {
+        const block = document.createElement('div');
+        block.className = 'diff-comment-block';
+        block.innerHTML = `
+            <div class="diff-comment-body">${escapeHtml(comment.body)}</div>
+            <button type="button" class="diff-comment-del" aria-label="Delete comment">&times;</button>
+        `;
+        block.querySelector('.diff-comment-del').addEventListener('click', () => deleteComment(comment));
+        insertAfterTrailing(row, block);
+    }
+
+    function openComposer(row, file, side, line) {
+        // Avoid duplicate composers on the same row.
+        const existing = nextComposer(row);
+        if (existing) { existing.querySelector('textarea').focus(); return; }
+        const box = document.createElement('div');
+        box.className = 'diff-comment-block diff-composer';
+        box.innerHTML = `
+            <textarea class="diff-comment-input" rows="3" placeholder="Leave a comment…"></textarea>
+            <div class="diff-composer-actions">
+                <button type="button" class="primary-btn diff-comment-save">Comment</button>
+                <button type="button" class="ghost-btn diff-comment-cancel">Cancel</button>
+            </div>
+        `;
+        box.querySelector('.diff-comment-cancel').addEventListener('click', () => box.remove());
+        box.querySelector('.diff-comment-save').addEventListener('click', async () => {
+            const body = box.querySelector('textarea').value.trim();
+            if (!body) return;
+            box.remove();
+            await addComment({ file, side, line, body, created_at: new Date().toISOString() });
+        });
+        insertAfterTrailing(row, box);
+        box.querySelector('textarea').focus();
+    }
+
+    // insertAfterTrailing inserts node after row and any comment blocks already
+    // attached to it, so comments and composer stack in order under the line.
+    function insertAfterTrailing(row, node) {
+        let ref = row;
+        while (ref.nextSibling && ref.nextSibling.classList && ref.nextSibling.classList.contains('diff-comment-block')) {
+            ref = ref.nextSibling;
+        }
+        ref.parentNode.insertBefore(node, ref.nextSibling);
+    }
+
+    function nextComposer(row) {
+        let ref = row.nextSibling;
+        while (ref && ref.classList && ref.classList.contains('diff-comment-block')) {
+            if (ref.classList.contains('diff-composer')) return ref;
+            ref = ref.nextSibling;
+        }
+        return null;
+    }
+
+    async function addComment(comment) {
+        reviewComments.push(comment);
+        await persistReview();
+        renderAllComments();
+    }
+
+    async function deleteComment(comment) {
+        reviewComments = reviewComments.filter((c) => c !== comment);
+        await persistReview();
+        renderAllComments();
+    }
+
+    async function persistReview() {
+        try {
+            await apiPut(`/api/spec/${encodeURIComponent(currentSpecCode)}/review`, { comments: reviewComments });
+        } catch (err) {
+            showToast(`Save failed: ${err.message || err}`, 'err');
+        }
+    }
+
+    async function onRequestChanges() {
+        if (!currentSpecCode) return;
+        if (reviewComments.length === 0) {
+            showToast('Add at least one comment first', 'err');
+            return;
+        }
+        if (!window.confirm(`Convert ${reviewComments.length} comment(s) into Fix tasks and send ${currentSpecCode} back to IN PROGRESS?`)) return;
+        reviewStatus.textContent = 'Requesting changes…';
+        reviewStatus.className = 'status-msg';
+        try {
+            const res = await apiPost(`/api/spec/${encodeURIComponent(currentSpecCode)}/request-changes`, {});
+            showToast(`${currentSpecCode}: ${res.tasks_added} fix task(s) added`, 'ok');
+            closeModal();
+            await loadBoard();
+        } catch (err) {
+            reviewStatus.textContent = `Failed: ${err.message || err}`;
+            reviewStatus.className = 'status-msg err';
+        }
+    }
+
+    async function onIntegrate() {
+        if (!currentSpecCode) return;
+        if (!window.confirm(`Merge ${currentSpecCode}'s branch into base, remove its worktree and mark it DONE?`)) return;
+        reviewStatus.textContent = 'Integrating…';
+        reviewStatus.className = 'status-msg';
+        try {
+            await apiPost(`/api/spec/${encodeURIComponent(currentSpecCode)}/integrate`, {});
+            showToast(`${currentSpecCode} integrated`, 'ok');
+            closeModal();
+            await loadBoard();
+        } catch (err) {
+            reviewStatus.textContent = `Failed: ${err.message || err}`;
+            reviewStatus.className = 'status-msg err';
+        }
+    }
+
+    // cssEscape escapes a string for use in a CSS attribute selector. Falls back
+    // to a manual escape when CSS.escape is unavailable.
+    function cssEscape(s) {
+        if (window.CSS && CSS.escape) return CSS.escape(s);
+        return String(s).replace(/["\\]/g, '\\$&');
     }
 
     // ---- API helpers --------------------------------------------------------

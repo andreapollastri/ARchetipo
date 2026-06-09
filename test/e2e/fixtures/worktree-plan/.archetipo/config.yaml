@@ -1,0 +1,26 @@
+connector: file
+
+paths:
+  prd: docs/PRD.md
+  mockups: docs/mockups/
+  test_results: docs/test-results/
+
+workflow:
+  statuses:
+    todo: TODO
+    planned: PLANNED
+    in_progress: IN PROGRESS
+    review: REVIEW
+    done: DONE
+
+file:
+  backlog: .archetipo/backlog.yaml
+  planning: .archetipo/plans/
+
+# Worktree workflow enabled so `spec start` creates a per-spec branch + worktree
+# and `spec integrate` merges it back. This fixture drives the e2e worktree test.
+worktree:
+  enabled: true
+  base: main
+  dir: .archetipo/worktrees
+  branch_prefix: archetipo/

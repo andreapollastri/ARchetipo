@@ -38,9 +38,10 @@ func New(cfg config.Config) *Connector {
 
 func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, error) {
 	return domain.SetupInfo{
-		Connector: "inmemory",
-		Paths:     c.cfg.Paths,
-		Workflow:  c.cfg.Workflow,
+		Connector:   "inmemory",
+		ProjectRoot: c.cfg.ProjectRoot,
+		Paths:       c.cfg.Paths,
+		Workflow:    c.cfg.Workflow,
 	}, nil
 }
 

@@ -19,7 +19,28 @@ file:
   backlog: .archetipo/backlog.yaml
   planning: .archetipo/plans/
 
-# Used only when connector == github
+# Optional per-spec git worktree workflow. When enabled, `archetipo spec start`
+# creates a branch + worktree per spec so the review diff is isolated to a
+# single spec and integrated back with one merge. Disabled by default.
+worktree:
+  enabled: false
+  base: main
+  dir: .archetipo/worktrees
+  branch_prefix: archetipo/
+
+# Used only when connector == github. owner/project_number are auto-detected
+# from `gh`; the remaining keys are populated automatically by the CLI during
+# initialize_connector — leave them commented unless you need to override.
 github:
   # owner: auto-detected from repo
   # project_number: auto-detected from repo
+  # project_node_id: <auto>
+  # project_url: <auto>
+  # fields:
+  #   status_field_id: <auto>
+  #   status_options: { ... }
+  #   priority_field_id: <auto>
+  #   priority_options: { ... }
+  #   points_field_id: <auto>
+  #   epic_field_id: <auto>
+  #   epic_options: { ... }

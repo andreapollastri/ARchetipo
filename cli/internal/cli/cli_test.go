@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,6 +35,67 @@ func runCLI(t *testing.T, stdin string, args ...string) result {
 func newProject(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
+}
+
+func mustRun(t *testing.T, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, string(out))
+	}
+}
+
+func mustOutput(t *testing.T, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, string(out))
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func writeWorktreeConfig(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(".archetipo", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `connector: file
+worktree:
+  enabled: true
+  base: main
+  dir: .archetipo/worktrees
+  branch_prefix: archetipo/
+`
+	if err := os.WriteFile(filepath.Join(".archetipo", "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func initGitMain(t *testing.T) {
+	t.Helper()
+	mustRun(t, "git", "init", "-b", "main")
+	mustRun(t, "git", "config", "user.email", "archetipo-test@example.com")
+	mustRun(t, "git", "config", "user.name", "ARchetipo Test")
+	mustRun(t, "git", "commit", "--allow-empty", "-m", "base")
+}
+
+func seedStartedWorktreeSpec(t *testing.T) {
+	t.Helper()
+	writeWorktreeConfig(t)
+	initGitMain(t)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	planFile := writeInputFile(t, "plan.json", planJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
+		t.Fatalf("plan failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
+		t.Fatalf("start failed: %s", res.stderr.String())
+	}
 }
 
 func writeInputFile(t *testing.T, name, content string) string {
@@ -97,10 +159,17 @@ const planJSON = `{"plan_body":"## Plan\nDo the work","tasks":[
 
 func TestConfigShow(t *testing.T) {
 	newProject(t)
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	res := runCLI(t, "", "config", "show")
-	kind, _ := decodeOK(t, res)
+	kind, data := decodeOK(t, res)
 	if kind != "setup" {
 		t.Fatalf("expected kind=setup, got %s", kind)
+	}
+	if data["project_root"] != root {
+		t.Fatalf("expected project_root=%s, got %v", root, data["project_root"])
 	}
 }
 
@@ -202,6 +271,13 @@ func TestSpecShow_ByCode(t *testing.T) {
 	if len(tasks) != 0 {
 		t.Fatalf("expected 0 tasks before plan, got %d", len(tasks))
 	}
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data["workdir"] != root {
+		t.Fatalf("expected workdir=%s, got %v", root, data["workdir"])
+	}
 }
 
 func TestSpecShow_MissingCodeRejected(t *testing.T) {
@@ -228,6 +304,53 @@ func TestSpecNext_AutoPickByStatus(t *testing.T) {
 	// Auto-pick: priority HIGH first → US-001 (HIGH) before US-002 (MEDIUM).
 	if spec["code"] != "US-001" {
 		t.Fatalf("expected auto-pick US-001 (HIGH), got %v", spec["code"])
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data["workdir"] != root {
+		t.Fatalf("expected workdir=%s, got %v", root, data["workdir"])
+	}
+}
+
+func TestSpecShow_WorkdirBeforeAndAfterWorktreeStart(t *testing.T) {
+	newProject(t)
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWorktreeConfig(t)
+	initGitMain(t)
+
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	planFile := writeInputFile(t, "plan.json", planJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
+		t.Fatalf("plan failed: %s", res.stderr.String())
+	}
+
+	before := runCLI(t, "", "spec", "show", "US-001")
+	_, beforeData := decodeOK(t, before)
+	if beforeData["workdir"] != root {
+		t.Fatalf("expected workdir before start=%s, got %v", root, beforeData["workdir"])
+	}
+
+	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
+		t.Fatalf("start failed: stdout=%s stderr=%s", res.stdout.String(), res.stderr.String())
+	}
+
+	after := runCLI(t, "", "spec", "show", "US-001")
+	_, afterData := decodeOK(t, after)
+	wantWorkdir := filepath.Join(root, ".archetipo", "worktrees", "US-001")
+	if afterData["workdir"] != wantWorkdir {
+		t.Fatalf("expected workdir after start=%s, got %v", wantWorkdir, afterData["workdir"])
+	}
+	spec, _ := afterData["spec"].(map[string]any)
+	if spec["worktree"] != filepath.Join(".archetipo", "worktrees", "US-001") {
+		t.Fatalf("expected persisted spec.worktree, got %v", spec["worktree"])
 	}
 }
 
@@ -382,6 +505,79 @@ func TestSpecReview_CommentFromFile(t *testing.T) {
 	res := runCLI(t, "", "spec", "review", "US-001", "--file", commentFile)
 	if res.exit != 0 {
 		t.Fatalf("review failed: %s", res.stderr.String())
+	}
+}
+
+func TestSpecReview_CommitsDirtyWorktreeBeforeReview(t *testing.T) {
+	newProject(t)
+	writeWorktreeConfig(t)
+	initGitMain(t)
+	if err := os.WriteFile("hello.txt", []byte("Hello from ARchetipo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRun(t, "git", "add", "hello.txt")
+	mustRun(t, "git", "commit", "-m", "seed hello")
+
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	planFile := writeInputFile(t, "plan.json", planJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
+		t.Fatalf("plan failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
+		t.Fatalf("start failed: %s", res.stderr.String())
+	}
+
+	worktree := filepath.Join(".archetipo", "worktrees", "US-001")
+	if err := os.WriteFile(filepath.Join(worktree, "hello.txt"), []byte("Hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "archetipo.txt"), []byte("from ARchetipo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := runCLI(t, "Closing notes", "spec", "review", "US-001")
+	if res.exit != 0 {
+		t.Fatalf("review failed: stdout=%s stderr=%s", res.stdout.String(), res.stderr.String())
+	}
+	show := runCLI(t, "", "spec", "show", "US-001")
+	_, data := decodeOK(t, show)
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "REVIEW" {
+		t.Fatalf("expected REVIEW, got %v", spec["status"])
+	}
+	if status := mustOutput(t, "git", "-C", worktree, "status", "--porcelain"); status != "" {
+		t.Fatalf("expected clean worktree after review commit, got %q", status)
+	}
+	diff := mustOutput(t, "git", "diff", "--name-status", "main...archetipo/US-001")
+	if !strings.Contains(diff, "M\thello.txt") {
+		t.Fatalf("expected review diff to include modified hello.txt, got:\n%s", diff)
+	}
+	if !strings.Contains(diff, "A\tarchetipo.txt") {
+		t.Fatalf("expected review diff to include new archetipo.txt, got:\n%s", diff)
+	}
+}
+
+func TestSpecReview_CleanWorktreeDoesNotCreateCommit(t *testing.T) {
+	newProject(t)
+	seedStartedWorktreeSpec(t)
+	before := mustOutput(t, "git", "rev-parse", "archetipo/US-001")
+
+	res := runCLI(t, "", "spec", "review", "US-001")
+	if res.exit != 0 {
+		t.Fatalf("review failed: %s", res.stderr.String())
+	}
+	after := mustOutput(t, "git", "rev-parse", "archetipo/US-001")
+	if after != before {
+		t.Fatalf("expected no new commit for clean worktree, before=%s after=%s", before, after)
+	}
+	show := runCLI(t, "", "spec", "show", "US-001")
+	_, data := decodeOK(t, show)
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "REVIEW" {
+		t.Fatalf("expected REVIEW, got %v", spec["status"])
 	}
 }
 

@@ -41,10 +41,11 @@ var mockupSpecCodeRE = regexp.MustCompile(`^(US|EP)-\d+$`)
 func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, error) {
 	file := c.cfg.File
 	return domain.SetupInfo{
-		Connector: config.ConnectorFile,
-		Paths:     c.cfg.Paths,
-		Workflow:  c.cfg.Workflow,
-		File:      &file,
+		Connector:   config.ConnectorFile,
+		ProjectRoot: c.cfg.ProjectRoot,
+		Paths:       c.cfg.Paths,
+		Workflow:    c.cfg.Workflow,
+		File:        &file,
 	}, nil
 }
 
@@ -441,6 +442,18 @@ func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain
 	}
 	if patch.Epic != nil {
 		spec.Epic = *patch.Epic
+	}
+	if patch.Branch != nil {
+		spec.Branch = *patch.Branch
+	}
+	if patch.Worktree != nil {
+		spec.Worktree = *patch.Worktree
+	}
+	if patch.ForkBase != nil {
+		spec.ForkBase = *patch.ForkBase
+	}
+	if patch.Rework != nil {
+		spec.Rework = *patch.Rework
 	}
 	store.Specs[specRef] = spec
 	if err := c.writeStore(store); err != nil {

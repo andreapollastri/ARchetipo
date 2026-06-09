@@ -38,6 +38,10 @@ type Config struct {
 	Workflow  domain.WorkflowConfig `yaml:"workflow" json:"workflow"`
 	File      domain.FileConfig     `yaml:"file" json:"file,omitempty"`
 	GitHub    GitHubConfig          `yaml:"github" json:"github,omitempty"`
+	// Worktree is the optional per-spec git worktree workflow. Disabled by
+	// default; when enabled, `archetipo spec start` creates a branch + worktree
+	// per spec so the review diff can be isolated and integrated with one merge.
+	Worktree domain.WorktreeConfig `yaml:"worktree" json:"worktree,omitempty"`
 	// ProjectRoot is the absolute path of the directory that contains
 	// .archetipo/. Set by Load; not present in the YAML file.
 	ProjectRoot string `yaml:"-" json:"project_root"`
@@ -75,6 +79,12 @@ func Default() Config {
 				Review:     string(domain.StatusReview),
 				Done:       string(domain.StatusDone),
 			},
+		},
+		Worktree: domain.WorktreeConfig{
+			Enabled:      false,
+			Base:         "main",
+			Dir:          ".archetipo/worktrees",
+			BranchPrefix: "archetipo/",
 		},
 	}
 }
@@ -215,6 +225,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Workflow.Statuses.Done == "" {
 		c.Workflow.Statuses.Done = d.Workflow.Statuses.Done
+	}
+	if c.Worktree.Base == "" {
+		c.Worktree.Base = d.Worktree.Base
+	}
+	if c.Worktree.Dir == "" {
+		c.Worktree.Dir = d.Worktree.Dir
+	}
+	if c.Worktree.BranchPrefix == "" {
+		c.Worktree.BranchPrefix = d.Worktree.BranchPrefix
 	}
 }
 
