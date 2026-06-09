@@ -39,14 +39,23 @@ Gli AI coding agent sono veloci, ma una risposta veloce a un prompt isolato non 
 npm install -g @techreloaded/archetipo
 ```
 
-Un'unica installazione globale funziona su macOS, Linux e Windows. Per aggiornarla:
+ se non puoi installare pacchetti npm globali, installa ARchetipo come dipendenza locale del progetto.
 
 ```bash
-archetipo update
+ npm install @techreloaded/archetipo
 ```
 
-> Su Linux, se `npm install -g` segnala problemi di permessi, imposta una volta un prefix nella tua home:
-> `npm config set prefix ~/.npm-global`, poi aggiungi `~/.npm-global/bin` al tuo `PATH`.
+ Poi aggiungi la CLI locale al `PATH` della sessione corrente:
+ 
+```bash
+ # Windows PowerShell
+ $env:PATH = "$(Get-Location)\node_modules\.bin;$env:PATH"
+ 
+ # macOS / Linux
+ export PATH="$PWD/node_modules/.bin/:$PATH"
+```
+
+Dopo, `archetipo init` funziona normalmente.
 
 ### 2. Inizializza un progetto
 

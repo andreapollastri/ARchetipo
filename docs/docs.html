@@ -95,6 +95,25 @@
 </pre>
     </div>
 
+    <h3>Installazione locale (fallback)</h3>
+    <p>Se non puoi installare pacchetti npm globali, installa ARchetipo come dipendenza locale del progetto:</p>
+
+    <div class="code-block">
+      <div class="code-head"><span>terminal</span><span>bash</span></div>
+<pre><span class="cmt"># Installa come dipendenza locale</span>
+<span class="p">npm</span> install @techreloaded/archetipo
+
+<span class="cmt"># Aggiungi la CLI locale al PATH della sessione</span>
+<span class="cmt"># Windows PowerShell:</span>
+<span class="p">$env:PATH</span> = "$(Get-Location)\node_modules\.bin;$env:PATH"
+<span class="cmt"># macOS / Linux:</span>
+<span class="p">export</span> PATH="$PWD/node_modules/.bin/:$PATH"
+
+<span class="cmt"># Poi inizializza normalmente</span>
+<span class="p">archetipo</span> init
+</pre>
+    </div>
+
     <h3>Cosa fa <code>archetipo init</code></h3>
     <ul>
       <li>Mostra un menu interattivo per scegliere su quali AI tool installare le skill.</li>

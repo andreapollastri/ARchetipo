@@ -12,6 +12,25 @@ The package ships a small Node shim plus a native Go binary delivered as an
 `optionalDependencies` per platform (darwin/linux/win32 × arm64/x64). npm will
 install only the binary that matches the host.
 
+**Alternatively:** if you cannot install npm packages globally, install
+ARchetipo as a local project dependency.
+
+```bash
+npm install @techreloaded/archetipo
+```
+
+Then add the local CLI to your session `PATH`:
+
+```bash
+# Windows PowerShell
+$env:PATH = "$(Get-Location)\node_modules\.bin;$env:PATH"
+
+# macOS / Linux
+export PATH="$PWD/node_modules/.bin/:$PATH"
+```
+
+After that, `archetipo init` works as usual.
+
 ## Bootstrap a project
 
 ```bash
