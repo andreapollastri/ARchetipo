@@ -103,6 +103,14 @@ When the inception flow has gathered the minimum required information, generate 
 
 {{NEW_DIRECTIONS_DISCOVERED}}
 
+### Assumptions to Validate
+
+{{ASSUMPTIONS_TO_VALIDATE}}
+
+### Key Risks
+
+{{KEY_RISKS}}
+
 ---
 
 ## Product Scope

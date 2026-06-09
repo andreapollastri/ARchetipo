@@ -45,9 +45,10 @@ Load context progressively and keep the working context lean:
 - Do not say things like:
   - "sto avviando il workflow..."
   - "passo al workflow inception"
-- Ask clarifying questions only when critical information is missing and cannot be inferred responsibly
-- Keep questions grouped in a single message when possible
-- Record assumptions and open questions in the generated document instead of blocking progress on non-critical gaps
+- Ask blocking clarifying questions only when critical information is missing and cannot be inferred responsibly
+- Treat discovery and challenge questions as part of the inception work, even when some information could be inferred, whenever they help test assumptions, priorities, scope, or trade-offs
+- Keep discovery and challenge questions grouped, concise, and easy to skip in a single message when possible
+- If non-critical discovery gaps remain, proceed with explicit assumptions and open questions in the generated document instead of blocking progress
 
 ## Output Boundaries
 

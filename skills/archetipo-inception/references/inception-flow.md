@@ -23,6 +23,11 @@ Rotation rule:
 - Choose them based on the active phase
 - Agents may build on each other or disagree respectfully
 
+Role emphasis for this flow:
+- Andrea actively challenges scope boundaries, MVP cuts, and value prioritization.
+- Livia actively challenges accessibility risks and inclusivity implications in the product experience.
+- Emanuele steps in only when major ambiguities would materially weaken the requirements or PRD.
+
 ## Phase 0 - Activation
 
 On activation:
@@ -67,22 +72,48 @@ Collect internally:
 - vision statement
 - product differentiator
 - challenged assumptions
+- assumptions to validate, including unresolved open questions when the user cannot answer them
+- main risks, especially adoption and execution risks
 - at least one brainstorming round
 - two personas when possible
 - goals, pain points, behaviors, tech savviness
 - persona journey
+- accessibility considerations that materially affect the product experience
 - MVP, growth, and vision scope
 
 ### Brainstorming Protocol
 
-Costanza must run at least one brainstorming round using some of these techniques:
+Costanza must run at least one brainstorming round and use at least 2 different brainstorming or challenge techniques from this list across the discovery phase:
 
 - **"What if..."** — ask provocative what-if questions that shift one constraint (budget, scale, audience, technology) to surface alternative product directions.
 - **Assumption challenging** — make an implicit assumption in the PRD explicit, then ask "what if it were false?" to test its robustness.
 - **Audience flip** — imagine the product being used by a completely different persona than the target one, and look at what changes (or surprisingly doesn't).
 - **Anti-problem** — frame the opposite of the goal (e.g. "how would we make this unusable?") and reverse the insights to find risks and differentiators.
 
-Pick the technique(s) that best fit the information gaps of the moment. Summarize discoveries before moving on.
+Pick the technique(s) that best fit the information gaps of the moment. Use at least 2 distinct techniques before concluding discovery. Summarize discoveries and the challenged assumptions before moving on.
+
+### Critical Confirmation Protocol
+
+When the conversation infers or materially reframes any of these critical points, ask the user for a lightweight grouped confirmation before locking them into the PRD:
+
+- primary target user or segment
+- main problem
+- value proposition or differentiator
+- MVP scope
+- main adoption risk
+- technical decisions that strongly constrain implementation
+
+Keep the confirmation concise and grouped rather than turning it into a heavy questionnaire. If the user does not know or prefers not to answer yet, proceed and record the item as an assumption to validate instead of blocking progress.
+
+### Open Questions Protocol
+
+Track unresolved questions that materially affect the product framing, MVP scope, adoption risk, or architecture.
+
+Before generating the PRD:
+1. Gather the remaining open questions into one concise follow-up when possible.
+2. Ask the user to resolve them if the answer would materially improve the PRD.
+3. If the user answers, fold the answer into the relevant PRD sections.
+4. If the user does not know or prefers not to answer, proceed without adding a new hard gate and carry the item into `Assumptions to Validate` as a clearly marked open question.
 
 ## Phase 2 - Technical Architecture
 
@@ -146,10 +177,11 @@ PRD Progress:
 ```
 
 When the minimum is met:
-1. Read `prd-template.md`
-2. Generate the PRD using `prd-template.md` as the format template
-3. Pipe the PRD markdown into `archetipo prd write` and verify the resulting `write_result` envelope
-4. Confirm completion
+1. If material open questions remain, ask one concise grouped follow-up per the Open Questions Protocol.
+2. Read `prd-template.md`
+3. Generate the PRD using `prd-template.md` as the format template
+4. Pipe the PRD markdown into `archetipo prd write` and verify the resulting `write_result` envelope
+5. Confirm completion
 
 ## Information Extraction Protocol
 
@@ -157,8 +189,8 @@ After every user reply:
 1. Scan the full message for PRD-relevant information
 2. Categorize by section
 3. Update the internal completeness tracker
-4. Identify missing gaps
-5. Extract implicit signals and validate them later if needed
+4. Identify missing gaps and unresolved open questions
+5. Extract implicit signals, especially around critical product or architecture decisions, and validate them later if needed
 
 ## Edge Cases
 
@@ -169,8 +201,8 @@ After every user reply:
 
 ### Insufficient information
 - Explain why the missing information matters
-- Ask only if critical
-- Otherwise proceed with assumptions and mark TODOs or open questions in the PRD
+- Ask only if critical or if resolving it would materially improve the PRD
+- Otherwise proceed with assumptions and carry unresolved items into `Assumptions to Validate` as clearly marked open questions
 
 ### Scope creep
 - Andrea steers back to MVP
