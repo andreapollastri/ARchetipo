@@ -159,3 +159,38 @@ After implementing this spec, [describe what can be concretely observed or verif
 - [ ] [Validation or error case]
 - [ ] [Relevant edge case]
 ```
+
+## Non-Feature Specs (Refactoring / Tech Debt)
+
+Not every valuable slice is user-facing. Refactoring, dependency upgrades, performance work, and debt repayment are legitimate specs — but they need different acceptance criteria, or they become unverifiable "improve the code" wishes.
+
+Rules for non-feature specs:
+
+- **The persona is a developer or operator**, not an end user. "As a developer maintaining the billing module..." is a valid user story opening.
+- **The benefit must still be concrete**: faster builds, safer changes, lower latency, fewer production incidents — never "cleaner code" without an observable consequence.
+- **`Demonstrates` must be observable without the feature changing**: a measurement, a passing regression suite, a removed dependency in the lockfile, a profiler trace. If nothing observable changes, the spec is not ready.
+- **Acceptance criteria are regression + target**: at least one criterion pins existing behavior ("the full test suite passes unchanged"), and at least one states the measurable goal of the work.
+- **Same INVEST rules apply**: a refactoring spec too large to verify in one review must be split by module or by seam, not delivered as a big-bang rewrite.
+- **No demo video**: per the implement skill's e2e policy, purely technical specs skip video recording; expect the evidence to be test output and measurements instead.
+
+Template variant (only the marked fields differ from the standard template):
+
+```markdown
+#### US-XXX: [Refactor/upgrade goal, action-oriented]
+
+**Epic:** EP-XXX | **Priority:** MEDIUM | **Points:** N | **Status:** {config.workflow.statuses.todo}
+**Blocked by:** -
+
+**User Story**
+As [developer/operator role],
+I want [the structural change — e.g. "the payment client extracted behind an interface"],
+so that [the observable consequence — e.g. "providers can be swapped without touching checkout code"].
+
+**Demonstrates**
+After implementing this spec, [observable, feature-neutral evidence — e.g. "the full test suite passes unchanged and the new module has no import from the legacy package", or "p95 latency of /search drops below 200ms in the benchmark"]
+
+**Acceptance Criteria**
+- [ ] [Regression guard: existing behavior is preserved — name the suite or contract that proves it]
+- [ ] [The measurable target of the work — metric, structure, or dependency state]
+- [ ] [Cleanup boundary: what is explicitly out of scope, when relevant]
+```

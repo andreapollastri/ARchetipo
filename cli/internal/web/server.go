@@ -113,6 +113,7 @@ func (s *Server) Run(ctx context.Context, onReady func(url string)) error {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/board", s.handleGetBoard)
 	s.mux.HandleFunc("GET /api/board/stream", s.handleStreamBoard)
+	s.mux.HandleFunc("GET /api/metrics", s.handleGetMetrics)
 	s.mux.HandleFunc("GET /api/spec/{code}", s.handleGetSpec)
 	s.mux.HandleFunc("PUT /api/spec/{code}", s.handleUpdateSpec)
 	s.mux.HandleFunc("PUT /api/spec/{code}/plan", s.handleSavePlan)

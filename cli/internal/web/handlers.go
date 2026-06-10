@@ -10,6 +10,7 @@ import (
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/domain"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/metrics"
 )
 
 // boardColumnView is the JSON shape of one Kanban column in GET /api/board.
@@ -35,6 +36,16 @@ var boardLayout = []struct {
 	{"in_progress", domain.StatusInProgress},
 	{"review", domain.StatusReview},
 	{"done", domain.StatusDone},
+}
+
+// handleGetMetrics returns the same aggregation as `archetipo metrics`.
+func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
+	specs, err := s.conn.FetchBacklogItems(r.Context(), "")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, metrics.Compute(specs))
 }
 
 func (s *Server) handleGetBoard(w http.ResponseWriter, r *http.Request) {

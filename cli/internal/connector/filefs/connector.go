@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
+	"time"
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/config"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector"
@@ -257,6 +259,7 @@ func (c *Connector) SaveInitialBacklog(ctx context.Context, specs []domain.Spec)
 	}
 	for _, spec := range specs {
 		spec.Ref = spec.Code
+		recordCreation(&spec)
 		store.Specs[spec.Code] = spec
 	}
 	if err := c.writeStore(store); err != nil {
@@ -283,6 +286,7 @@ func (c *Connector) AppendSpecs(ctx context.Context, specs []domain.Spec) (domai
 			continue
 		}
 		spec.Ref = spec.Code
+		recordCreation(&spec)
 		store.Specs[spec.Code] = spec
 		added = append(added, spec)
 	}
@@ -321,7 +325,10 @@ func (c *Connector) TransitionStatus(ctx context.Context, specRef string, newSta
 	if _, ok := columnIDForStatus(c.boardColumns(), newStatus); !ok {
 		return domain.WriteResult{}, iox.NewConflict(fmt.Sprintf("status %s is not mapped to a board column", newStatus), "", nil)
 	}
-	spec.Status = newStatus
+	if spec.Status != newStatus {
+		spec.Status = newStatus
+		recordTransition(&spec, newStatus)
+	}
 	store.Specs[specRef] = spec
 	if err := c.writeStore(store); err != nil {
 		return domain.WriteResult{}, err
@@ -388,6 +395,7 @@ func (c *Connector) MoveBoardCard(ctx context.Context, specRef, targetColumn str
 	refs := []domain.Ref{{Code: specRef, Path: c.backlogPath()}}
 	if spec.Status != targetStatus {
 		spec.Status = targetStatus
+		recordTransition(&spec, targetStatus)
 		store.Specs[specRef] = spec
 		refs = append(refs, domain.Ref{Code: specRef, Path: c.specPath(specRef)})
 	}
@@ -468,6 +476,23 @@ func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain
 	}, nil
 }
 
+// recordCreation seeds the status history with the status the spec is created
+// with, so lead time can be measured from day one. No-op when the payload
+// already carries a history (e.g. an import).
+func recordCreation(spec *domain.Spec) {
+	if len(spec.History) > 0 {
+		return
+	}
+	recordTransition(spec, spec.Status)
+}
+
+func recordTransition(spec *domain.Spec, status domain.Status) {
+	spec.History = append(spec.History, domain.StatusChange{
+		Status: status,
+		At:     time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 func refsFromSpecs(specs []domain.Spec, path string) []domain.Ref {
 	out := make([]domain.Ref, 0, len(specs))
 	for _, spec := range specs {
@@ -488,14 +513,17 @@ func highestCode(codes []string) string {
 }
 
 func numericTail(code string) int {
-	value := 0
-	multiplier := 1
-	for i := len(code) - 1; i >= 0; i-- {
-		if code[i] < '0' || code[i] > '9' {
-			break
-		}
-		value += int(code[i]-'0') * multiplier
-		multiplier *= 10
+	start := len(code)
+	for start > 0 && code[start-1] >= '0' && code[start-1] <= '9' {
+		start--
+	}
+	if start == len(code) {
+		return 0
+	}
+	value, err := strconv.Atoi(code[start:])
+	if err != nil {
+		// Out of int range: treat as no numeric tail rather than a garbage value.
+		return 0
 	}
 	return value
 }

@@ -9,6 +9,31 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/domain"
 )
 
+func TestValidatePlanInput(t *testing.T) {
+	task := func(id string, deps ...string) domain.Task {
+		return domain.Task{ID: id, Dependencies: deps}
+	}
+	tests := []struct {
+		name    string
+		tasks   []domain.Task
+		wantErr bool
+	}{
+		{"empty plan", nil, false},
+		{"valid graph", []domain.Task{task("TASK-01"), task("TASK-02", "TASK-01")}, false},
+		{"empty task id", []domain.Task{task("")}, true},
+		{"duplicate task id", []domain.Task{task("TASK-01"), task("TASK-01")}, true},
+		{"unknown dependency", []domain.Task{task("TASK-01", "TASK-99")}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validatePlanInput(domain.PlanInput{Tasks: tc.tasks})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("validatePlanInput() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestResolveWorkdir pins the resolution precedence: the real filesystem state
 // wins over the persisted spec.Worktree field, so a dropped link never hides an
 // existing worktree (the bug this resolution exists to prevent).

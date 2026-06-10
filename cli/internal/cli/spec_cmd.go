@@ -27,6 +27,7 @@ import (
 //	spec plan   -> save plan + transition TODO → PLANNED (stdin: {"plan_body","tasks"})
 //	spec start  -> transition PLANNED → IN PROGRESS (idempotent)
 //	spec review -> transition IN PROGRESS → REVIEW; --file (optional) is a closing comment
+//	spec request-changes -> REVIEW → TODO with rework feedback appended to the body (stdin: {"comments":[...]})
 //	spec move   -> reposition a spec within the board or across workflow columns
 func newSpecCmd(s streams) *cobra.Command {
 	root := &cobra.Command{Use: "spec", Short: "Spec operations (user story is the spec body)"}
@@ -38,6 +39,7 @@ func newSpecCmd(s streams) *cobra.Command {
 		newSpecPlanCmd(s),
 		newSpecStartCmd(s),
 		newSpecReviewCmd(s),
+		newSpecRequestChangesCmd(s),
 		newSpecIntegrateCmd(s),
 		newSpecMoveCmd(s),
 	)
@@ -279,6 +281,9 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 			if err := readStructuredInput(s.in, filePath, &input); err != nil {
 				return err
 			}
+			if err := validatePlanInput(input); err != nil {
+				return err
+			}
 			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
 				spec, err := c.ReadSpecDetail(ctx, ref)
 				if err != nil {
@@ -312,6 +317,37 @@ func newSpecPlanCmd(s streams) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "path to a YAML or JSON payload file, or - for stdin")
 	return cmd
+}
+
+// validatePlanInput rejects plans with duplicate task ids or dependencies that
+// do not reference a task in the same plan, so broken task graphs surface at
+// save time instead of during implementation.
+func validatePlanInput(input domain.PlanInput) error {
+	ids := make(map[string]struct{}, len(input.Tasks))
+	for _, t := range input.Tasks {
+		id := strings.TrimSpace(t.ID)
+		if id == "" {
+			return iox.NewInvalidInput("plan task with empty id", "give every task a unique id (e.g. TASK-01)", nil)
+		}
+		if _, dup := ids[id]; dup {
+			return iox.NewInvalidInput("duplicate plan task id: "+id, "task ids must be unique within the plan", nil)
+		}
+		ids[id] = struct{}{}
+	}
+	for _, t := range input.Tasks {
+		for _, dep := range t.Dependencies {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
+				continue
+			}
+			if _, ok := ids[dep]; !ok {
+				return iox.NewInvalidInput(
+					fmt.Sprintf("task %s depends on unknown task %s", t.ID, dep),
+					"dependencies must reference task ids defined in the same plan", nil)
+			}
+		}
+	}
+	return nil
 }
 
 func newSpecStartCmd(s streams) *cobra.Command {
@@ -473,6 +509,62 @@ func newSpecReviewCmd(s streams) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&filePath, "file", "", "path to the closing comment, or - for stdin (default: stdin)")
+	return cmd
+}
+
+func newSpecRequestChangesCmd(s streams) *cobra.Command {
+	var filePath string
+	cmd := &cobra.Command{
+		Use:   "request-changes US-XXX",
+		Short: "Send a spec under REVIEW back to TODO with structured rework feedback",
+		Long: "Reads a YAML or JSON payload from --file ({\"comments\":[{\"file\",\"line\",\"body\"}]}), " +
+			"appends the comments to the spec body as a \"" + domain.ReworkFeedbackHeading + "\" section, " +
+			"flags the spec as in rework and transitions it back to TODO. The next `archetipo spec plan` " +
+			"run turns each feedback item into a Fix task. `file` and `line` are optional anchors. " +
+			"Errors with E_CONFLICT when the spec is not in REVIEW.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := strings.TrimSpace(args[0])
+			if ref == "" {
+				return errInvalidUsage("missing spec code", "pass US-XXX as positional argument")
+			}
+			if filePath == "" {
+				return errInvalidUsage("missing input file", "pass --file path/to/feedback.yaml or --file -")
+			}
+			var input domain.Review
+			if err := readStructuredInput(s.in, filePath, &input); err != nil {
+				return err
+			}
+			comments := make([]domain.ReviewComment, 0, len(input.Comments))
+			for _, c := range input.Comments {
+				if strings.TrimSpace(c.Body) == "" {
+					continue
+				}
+				comments = append(comments, c)
+			}
+			if len(comments) == 0 {
+				return errInvalidUsage("no feedback comments in payload", "pass at least one comment with a non-empty body")
+			}
+			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
+				spec, err := c.ReadSpecDetail(ctx, ref)
+				if err != nil {
+					return nil, err
+				}
+				if spec.Status != domain.StatusReview {
+					return nil, iox.NewConflict(
+						fmt.Sprintf("cannot request changes on spec %s: status is %s, expected %s", ref, spec.Status, domain.StatusReview),
+						"only specs under review can be sent back with feedback", nil)
+				}
+				body := domain.AppendReworkFeedback(spec.Body, comments)
+				rework := true
+				if _, err := c.UpdateSpec(ctx, ref, domain.SpecUpdate{Body: &body, Rework: &rework}); err != nil {
+					return nil, err
+				}
+				return c.TransitionStatus(ctx, ref, domain.StatusTodo)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&filePath, "file", "", "path to a YAML or JSON payload file, or - for stdin")
 	return cmd
 }
 

@@ -1471,3 +1471,201 @@ html[data-theme="light"] .cm-s-easymde .cm-link { color: var(--priority-low); }
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ---- Metrics panel ------------------------------------------------------ */
+
+.metrics-body { display: flex; flex-direction: column; gap: 1.1rem; }
+
+.metrics-hero {
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    padding: 1rem 1.1rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.metrics-pct {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    line-height: 1;
+    color: var(--text-strong);
+    white-space: nowrap;
+}
+
+.metrics-pct span { font-size: 1.3rem; color: var(--text-muted); }
+
+.metrics-hero-detail { flex: 1; min-width: 0; }
+
+.metrics-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface-3);
+    overflow: hidden;
+}
+
+.metrics-bar.slim { height: 5px; }
+
+.metrics-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width var(--transition);
+}
+
+.metrics-hero-caption {
+    margin-top: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.metrics-statuses {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.5rem;
+}
+
+.metrics-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.55rem 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.metrics-status-num {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--text-strong);
+}
+
+.metrics-status-label {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.metrics-status.st-todo .metrics-status-num { color: var(--status-todo); }
+.metrics-status.st-planned .metrics-status-num { color: var(--status-planned); }
+.metrics-status.st-progress .metrics-status-num { color: var(--status-progress); }
+.metrics-status.st-review .metrics-status-num { color: var(--status-review); }
+.metrics-status.st-done .metrics-status-num { color: var(--status-done); }
+
+.metrics-section-title {
+    margin: 0.2rem 0 -0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.metrics-epics { display: flex; flex-direction: column; gap: 0.7rem; }
+
+.metrics-epic {
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.metrics-epic-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.metrics-epic-code {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--accent);
+}
+
+.metrics-epic-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.metrics-epic-pct {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-strong);
+}
+
+.metrics-epic-caption {
+    margin-top: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    color: var(--text-muted);
+}
+
+.metrics-flow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+}
+
+.metrics-flow-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.65rem 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+}
+
+.metrics-flow-num {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    color: var(--text-strong);
+}
+
+.metrics-flow-label {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.metrics-attention {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-size: 0.84rem;
+    color: var(--text);
+}
+
+.metrics-flag {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    margin-right: 0.3rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metrics-flag.rework { background: var(--accent-soft); color: var(--accent-strong); }
+.metrics-flag.blocked { background: var(--surface-3); color: var(--priority-high); }

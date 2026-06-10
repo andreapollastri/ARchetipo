@@ -149,7 +149,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	body := appendReworkFeedback(spec.Body, review.Comments)
+	body := domain.AppendReworkFeedback(spec.Body, review.Comments)
 	rework := true
 	if _, err := s.conn.UpdateSpec(ctx, code, domain.SpecUpdate{Body: &body, Rework: &rework}); err != nil {
 		writeError(w, err)
@@ -165,33 +165,6 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "comments_moved": len(review.Comments)})
-}
-
-// reworkFeedbackHeading is the markdown heading under which request-changes
-// records the review comments. archetipo-plan keys off this heading to detect a
-// rework cycle.
-const reworkFeedbackHeading = "## Rework Feedback"
-
-// appendReworkFeedback appends a Rework Feedback section to the spec body, one
-// bullet per review comment anchored to its file:line. archetipo-plan turns
-// each bullet into a Fix task.
-func appendReworkFeedback(body string, comments []domain.ReviewComment) string {
-	var b strings.Builder
-	if trimmed := strings.TrimRight(body, "\n"); trimmed != "" {
-		b.WriteString(trimmed)
-		b.WriteString("\n\n")
-	}
-	b.WriteString(reworkFeedbackHeading)
-	b.WriteString("\n\n<!-- Added by `archetipo view` request-changes. archetipo-plan converts each item into a Fix task. -->\n\n")
-	for _, c := range comments {
-		anchor := c.File
-		if c.Line > 0 {
-			anchor = fmt.Sprintf("%s:%d", c.File, c.Line)
-		}
-		text := strings.ReplaceAll(strings.TrimSpace(c.Body), "\n", " ")
-		b.WriteString(fmt.Sprintf("- **%s** — %s\n", anchor, text))
-	}
-	return b.String()
 }
 
 // handleIntegrate merges the spec's branch into base, removes the worktree and

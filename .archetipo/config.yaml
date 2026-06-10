@@ -12,7 +12,7 @@ workflow:
     planned: PLANNED
     in_progress: IN PROGRESS
     review: REVIEW
-    done: DONE        # transition to DONE is manual — no skill moves a spec to this status automatically
+    done: DONE        # human-gated: only /archetipo-review moves a spec here, after explicit user approval
 
 # Used only when connector == file
 file:

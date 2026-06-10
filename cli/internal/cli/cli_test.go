@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -581,6 +582,82 @@ func TestSpecReview_CleanWorktreeDoesNotCreateCommit(t *testing.T) {
 	}
 }
 
+func seedReviewedSpec(t *testing.T) {
+	t.Helper()
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	planFile := writeInputFile(t, "plan.json", planJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
+		t.Fatalf("plan failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
+		t.Fatalf("start failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "review", "US-001"); res.exit != 0 {
+		t.Fatalf("review failed: %s", res.stderr.String())
+	}
+}
+
+func TestSpecRequestChanges_HappyPath(t *testing.T) {
+	newProject(t)
+	seedReviewedSpec(t)
+	feedback := `{"comments":[
+		{"file":"src/app.js","line":12,"body":"handle the empty list case"},
+		{"body":"general note without anchor"}
+	]}`
+	feedbackFile := writeInputFile(t, "feedback.json", feedback)
+	res := runCLI(t, "", "spec", "request-changes", "US-001", "--file", feedbackFile)
+	if res.exit != 0 {
+		t.Fatalf("request-changes failed: %s", res.stderr.String())
+	}
+	show := runCLI(t, "", "spec", "show", "US-001")
+	_, data := decodeOK(t, show)
+	spec, _ := data["spec"].(map[string]any)
+	if spec["status"] != "TODO" {
+		t.Fatalf("expected TODO after request-changes, got %v", spec["status"])
+	}
+	if rework, _ := spec["rework"].(bool); !rework {
+		t.Fatalf("expected rework=true, got %v", spec["rework"])
+	}
+	body, _ := spec["body"].(string)
+	if !strings.Contains(body, "## Rework Feedback") {
+		t.Fatalf("expected Rework Feedback section in body, got:\n%s", body)
+	}
+	if !strings.Contains(body, "**src/app.js:12** — handle the empty list case") {
+		t.Fatalf("expected anchored bullet in body, got:\n%s", body)
+	}
+	if !strings.Contains(body, "- general note without anchor") {
+		t.Fatalf("expected unanchored bullet in body, got:\n%s", body)
+	}
+}
+
+func TestSpecRequestChanges_ConflictWhenNotInReview(t *testing.T) {
+	newProject(t)
+	specsFile := writeInputFile(t, "specs.json", specJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	feedbackFile := writeInputFile(t, "feedback.json", `{"comments":[{"body":"nope"}]}`)
+	res := runCLI(t, "", "spec", "request-changes", "US-001", "--file", feedbackFile)
+	_, code := decodeError(t, res)
+	if code != iox.CodeConflict {
+		t.Fatalf("expected E_CONFLICT, got %s", code)
+	}
+}
+
+func TestSpecRequestChanges_EmptyPayloadRejected(t *testing.T) {
+	newProject(t)
+	seedReviewedSpec(t)
+	feedbackFile := writeInputFile(t, "feedback.json", `{"comments":[{"body":"   "}]}`)
+	res := runCLI(t, "", "spec", "request-changes", "US-001", "--file", feedbackFile)
+	_, code := decodeError(t, res)
+	if code != iox.CodeInvalidInput {
+		t.Fatalf("expected E_INVALID_INPUT, got %s", code)
+	}
+}
+
 func TestTaskDone_Positional(t *testing.T) {
 	newProject(t)
 	specsFile := writeInputFile(t, "specs.json", specJSON)
@@ -650,6 +727,133 @@ func TestPRDWrite_FromFileFlag(t *testing.T) {
 	if ok, _ := data["ok"].(bool); !ok {
 		t.Fatalf("expected ok=true, got %v", data["ok"])
 	}
+}
+
+func TestMetrics_AggregatesBacklogAndFlow(t *testing.T) {
+	newProject(t)
+	specs := `{"specs":[
+		{"code":"US-001","title":"First","priority":"HIGH","points":3,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
+		{"code":"US-002","title":"Second","priority":"MEDIUM","points":2,"status":"TODO","epic":{"code":"EP-001","title":"Epic"},"blocked_by":["US-001"]}
+	]}`
+	specsFile := writeInputFile(t, "specs.json", specs)
+	planFile := writeInputFile(t, "plan.json", planJSON)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "plan", "US-001", "--file", planFile); res.exit != 0 {
+		t.Fatalf("plan failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "start", "US-001"); res.exit != 0 {
+		t.Fatalf("start failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "review", "US-001"); res.exit != 0 {
+		t.Fatalf("review failed: %s", res.stderr.String())
+	}
+	if res := runCLI(t, "", "spec", "move", "US-001", "--to", "done"); res.exit != 0 {
+		t.Fatalf("move to done failed: %s", res.stderr.String())
+	}
+
+	res := runCLI(t, "", "metrics")
+	kind, data := decodeOK(t, res)
+	if kind != "metrics" {
+		t.Fatalf("expected kind=metrics, got %s", kind)
+	}
+	totals, _ := data["totals"].(map[string]any)
+	if totals["specs"] != float64(2) || totals["points"] != float64(5) {
+		t.Fatalf("unexpected totals: %v", totals)
+	}
+	if totals["done_specs"] != float64(1) || totals["done_points"] != float64(3) {
+		t.Fatalf("unexpected done totals: %v", totals)
+	}
+	if totals["completion_pct"] != float64(60) {
+		t.Fatalf("expected completion_pct=60 (3/5 points), got %v", totals["completion_pct"])
+	}
+	epics, _ := data["by_epic"].([]any)
+	if len(epics) != 1 {
+		t.Fatalf("expected 1 epic bucket, got %v", data["by_epic"])
+	}
+	// US-002 is blocked by US-001, which is now DONE: no blocked specs.
+	if blocked, present := data["blocked"]; present {
+		t.Fatalf("expected no blocked specs (blocker is done), got %v", blocked)
+	}
+	flow, _ := data["flow"].(map[string]any)
+	if flow == nil || flow["measured_specs"] != float64(1) {
+		t.Fatalf("expected flow metrics for 1 done spec, got %v", data["flow"])
+	}
+}
+
+func TestMetrics_ReportsUnmetBlockers(t *testing.T) {
+	newProject(t)
+	specs := `{"specs":[
+		{"code":"US-001","title":"First","priority":"HIGH","points":3,"status":"TODO","epic":{"code":"EP-001","title":"Epic"}},
+		{"code":"US-002","title":"Second","priority":"MEDIUM","points":2,"status":"TODO","epic":{"code":"EP-001","title":"Epic"},"blocked_by":["US-001"]}
+	]}`
+	specsFile := writeInputFile(t, "specs.json", specs)
+	if res := runCLI(t, "", "spec", "add", "--file", specsFile); res.exit != 0 {
+		t.Fatalf("seed add failed: %s", res.stderr.String())
+	}
+	res := runCLI(t, "", "metrics")
+	_, data := decodeOK(t, res)
+	blocked, _ := data["blocked"].([]any)
+	if len(blocked) != 1 {
+		t.Fatalf("expected 1 blocked spec, got %v", data["blocked"])
+	}
+	entry, _ := blocked[0].(map[string]any)
+	if entry["code"] != "US-002" {
+		t.Fatalf("expected US-002 blocked, got %v", entry)
+	}
+	if _, present := data["flow"]; present {
+		t.Fatalf("expected no flow metrics without done specs, got %v", data["flow"])
+	}
+}
+
+func TestDoctor_FailsWithoutInstalledSkills(t *testing.T) {
+	newProject(t)
+	// Empty project: no tool directory has skills, so doctor must fail with
+	// E_PRECONDITION and still print the per-check report on stdout.
+	res := runCLI(t, "", "doctor")
+	_, code := decodeError(t, res)
+	if code != iox.CodePreconditionMissing {
+		t.Fatalf("expected E_PRECONDITION, got %s", code)
+	}
+	out := res.stdout.String()
+	if !strings.Contains(out, "installed skills") {
+		t.Fatalf("expected installed-skills check in report, got:\n%s", out)
+	}
+	if !strings.Contains(out, "archetipo init") {
+		t.Fatalf("expected init hint in report, got:\n%s", out)
+	}
+}
+
+func TestDoctor_PassesAfterInit(t *testing.T) {
+	newProject(t)
+	t.Setenv("ARCHETIPO_DATA_DIR", repoDataDir(t))
+	if res := runCLI(t, "", "init", "--tool", "claude", "--connector", "file", "--yes"); res.exit != 0 {
+		t.Fatalf("init failed: stdout=%s stderr=%s", res.stdout.String(), res.stderr.String())
+	}
+	res := runCLI(t, "", "doctor")
+	if res.exit != 0 {
+		t.Fatalf("doctor failed: stdout=%s stderr=%s", res.stdout.String(), res.stderr.String())
+	}
+	out := res.stdout.String()
+	if !strings.Contains(out, "All checks passed.") {
+		t.Fatalf("expected all checks to pass, got:\n%s", out)
+	}
+	if !strings.Contains(out, "skipped (connector is not github)") {
+		t.Fatalf("expected gh check to be skipped for file connector, got:\n%s", out)
+	}
+}
+
+// repoDataDir resolves the repository root (which holds skills/ + .archetipo/)
+// so init/doctor tests can run against the real packaged assets.
+func repoDataDir(t *testing.T) string {
+	t.Helper()
+	// This test file lives at cli/internal/cli/; the repo root is three up.
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Skip("cannot resolve caller path")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 }
 
 func TestVersionCommand(t *testing.T) {

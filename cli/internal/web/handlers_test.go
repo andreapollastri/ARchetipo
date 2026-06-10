@@ -17,6 +17,7 @@ import (
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector/filefs"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector/inmemory"
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/domain"
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/metrics"
 )
 
 func newTestServer(t *testing.T) (*Server, *inmemory.Connector) {
@@ -38,6 +39,28 @@ func seedSpecs(t *testing.T, c *inmemory.Connector) {
 	}
 	if _, err := c.SaveInitialBacklog(context.Background(), specs); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGetMetrics(t *testing.T) {
+	srv, conn := newTestServer(t)
+	seedSpecs(t, conn)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/metrics", nil)
+	srv.mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
+	}
+	var data metrics.Data
+	if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Totals.Specs != 2 || data.Totals.Points != 8 {
+		t.Fatalf("unexpected totals: %+v", data.Totals)
+	}
+	if len(data.ByEpic) != 1 || data.ByEpic[0].Code != "EP-001" {
+		t.Fatalf("unexpected epic buckets: %+v", data.ByEpic)
 	}
 }
 

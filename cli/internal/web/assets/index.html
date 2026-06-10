@@ -41,6 +41,10 @@
         </div>
 
         <div class="topbar-actions">
+            <button id="metrics-btn" type="button" class="ghost-btn">
+                <svg class="btn-ico" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 13.5h12" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 13.5V9M7 13.5V5.5M10.5 13.5V7.5M14 13.5V3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                <span>Metrics</span>
+            </button>
             <button id="prd-btn" type="button" class="ghost-btn">
                 <svg class="btn-ico" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5h7.5L13 4v10.5H3z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M10.5 1.5V4H13" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 7h5M5.5 9.5h5M5.5 12h3" stroke="currentColor" stroke-width="1.2"/></svg>
                 <span>PRD</span>
@@ -225,6 +229,21 @@
                         <span class="status-msg" id="prd-status"></span>
                     </div>
                 </form>
+            </section>
+        </div>
+    </div>
+
+    <div id="metrics-modal" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="metrics-title">
+        <div class="modal">
+            <header class="modal-header">
+                <h2 id="metrics-title" class="modal-title">Metrics</h2>
+                <button id="metrics-modal-close" type="button" class="icon-btn" aria-label="Close">
+                    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </button>
+            </header>
+            <section class="tab-panel active">
+                <div id="metrics-body" class="metrics-body"></div>
+                <span class="status-msg" id="metrics-status"></span>
             </section>
         </div>
     </div>

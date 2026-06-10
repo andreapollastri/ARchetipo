@@ -102,6 +102,7 @@ flowchart LR
 | 3. Backlog | `/archetipo-spec` | `.archetipo/backlog.yaml`, `.archetipo/specs/` | Converte il PRD in spec con corpo user-story INVEST-compliant, oppure estende un backlog esistente. |
 | 4. Planning | `/archetipo-plan US-001` | `.archetipo/plans/US-001-plan.yaml` | Produce soluzione tecnica, task ordinati, dipendenze e strategia di test. |
 | 5. Code | `/archetipo-implement US-001` | Codice, test, note di review | Esegue il piano, lancia i test, conduce la review e porta la spec verso l'approvazione umana. |
+| 6. Accettazione | `/archetipo-review US-001` | Verdetto: `DONE` o feedback di rework | Presenta l'incremento consegnato (criteri, diff, evidenze di test) ed esegue il verdetto umano: approva o rimanda indietro con feedback. |
 
 ### Stati workflow
 
@@ -113,7 +114,7 @@ Le spec attraversano stati standardizzati. ARchetipo automatizza il loop, mentre
 | `PLANNED` | Pianificazione tecnica completata. | Impostata da plan |
 | `IN PROGRESS` | Implementazione avviata. | Impostata da implement |
 | `REVIEW` | Code review e test completati; pronta per review umana. | Impostata da implement |
-| `DONE` | Spec accettata e rilasciata. | Solo manuale |
+| `DONE` | Spec accettata e rilasciata. | Approvazione umana via `/archetipo-review` |
 
 ### Il team AI
 
@@ -143,6 +144,7 @@ Usa questa guida dentro il tuo AI coding agent:
 | Hai già un backlog di spec? | Lancia `/archetipo-spec`. | Continua. |
 | Le spec sono già `PLANNED`? | Lancia `/archetipo-plan US-001` su una spec `TODO`. | Continua. |
 | Una spec è pronta per l'implementazione? | Pianificala prima. | Lancia `/archetipo-implement US-001`. |
+| Una spec è in attesa in `REVIEW`? | Implementala prima. | Lancia `/archetipo-review US-001` per accettarla o rimandarla indietro. |
 
 Per lavoro batch, `/archetipo-autopilot` può eseguire plan e implement su più spec eleggibili del backlog, con filtri per epic, priorità, numero massimo di spec o condizioni di stop.
 
@@ -155,6 +157,7 @@ ARchetipo usa una CLI deterministica scritta in Go, `archetipo`, per persistenza
 | Comando | Scopo |
 |---|---|
 | `archetipo init` | Installa ARchetipo nel progetto corrente e crea `.archetipo/config.yaml` più `.archetipo/shared-runtime.md`. |
+| `archetipo doctor` | Diagnostica l'installazione: data directory, skill nel pacchetto e installate, config di progetto, git e autenticazione gh (connettore github). |
 | `archetipo view` | Avvia una board Kanban locale per `.archetipo/backlog.yaml`, `.archetipo/specs/` e `.archetipo/plans/`. |
 | `archetipo config show` | Inizializza il connector e stampa i metadati. |
 | `archetipo prd write [--file PRD.md]` | Salva il markdown del PRD da `--file` o stdin. |
@@ -165,7 +168,10 @@ ARchetipo usa una CLI deterministica scritta in Go, `archetipo`, per persistenza
 | `archetipo spec plan US-001 --file plan.yaml` | Salva il piano di implementazione e porta la spec in `PLANNED`. |
 | `archetipo spec start US-001` | Porta una spec pianificata in `IN PROGRESS`. |
 | `archetipo spec review US-001 [--file note.md]` | Porta una spec in `REVIEW` e può allegare un commento finale. |
+| `archetipo spec request-changes US-001 --file feedback.json` | Rimanda una spec in `REVIEW` a `TODO` con feedback di rework strutturato aggiunto al corpo. |
+| `archetipo spec integrate US-001` | Fonde il branch worktree di una spec approvata nel base, pulisce e la marca `DONE` (workflow worktree). |
 | `archetipo task done US-001 TASK-01` | Marca un task come completato. |
+| `archetipo metrics` | Riporta l'avanzamento del backlog: totali, completamento, dettaglio per epic, WIP, rework, spec bloccate e cycle/lead time medi dalla history degli stati. |
 | `archetipo spec move US-001 --to review` | Riordina o sposta una spec tra colonne del workflow. |
 
 La CLI legge `.archetipo/config.yaml` dal progetto per scegliere connector attivo e percorsi degli artefatti.
@@ -213,6 +219,7 @@ L'architettura della CLI è estendibile, ma i connector integrati oggi sono `fil
 | `archetipo-spec` | Crea o estende il backlog a partire dall'intento di prodotto. | "crea il backlog", "aggiungi una spec", "serve una feature per..." |
 | `archetipo-plan` | Pianifica una spec con architettura, task, dipendenze e test. | "pianifica US-005", "come lo costruiamo?", "rompi questa spec in task" |
 | `archetipo-implement` | Esegue una spec pianificata attraverso codice, test, review e handoff. | "implementa US-005", "esegui la prossima spec pronta" |
+| `archetipo-review` | Facilita il gate di accettazione umano: approva verso `DONE` o rimanda indietro con feedback di rework. | "review US-005", "accetta la spec", "cosa c'è in attesa di review?" |
 | `archetipo-autopilot` | Esegue planning e implementazione su più spec eleggibili. | "fai tutto", "autopilot del backlog", "implementa tutte le spec" |
 
 ---
@@ -237,7 +244,7 @@ workflow:
     planned: PLANNED
     in_progress: IN PROGRESS
     review: REVIEW
-    done: DONE   # nessuna skill porta automaticamente una spec a DONE
+    done: DONE   # gate umano: solo /archetipo-review porta una spec qui, dopo approvazione esplicita
 
 github:
   # owner: auto-detected from repo

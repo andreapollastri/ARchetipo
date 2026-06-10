@@ -51,8 +51,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 
 	var (
-		timer    *time.Timer
-		timerCh  <-chan time.Time
+		timer   *time.Timer
+		timerCh <-chan time.Time
 	)
 	for {
 		select {

@@ -64,11 +64,13 @@ func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	s := streams{in: stdin, out: stdout, err: stderr}
 	cmd.AddCommand(
 		newConfigCmd(s),
+		newDoctorCmd(s),
 		newInitProjectCmd(s),
 		newUninstallCmd(s),
 		newUpdateCmd(s),
 		newPRDCmd(s),
 		newSpecCmd(s),
+		newMetricsCmd(s),
 		newTaskCmd(s),
 		newViewCmd(s),
 		newVersionCmd(s),

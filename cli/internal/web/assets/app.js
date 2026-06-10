@@ -38,6 +38,11 @@
     const prdCancelBtn = document.getElementById('prd-cancel-btn');
     const prdForm = document.getElementById('prd-form');
     const prdStatus = document.getElementById('prd-status');
+    const metricsBtn = document.getElementById('metrics-btn');
+    const metricsModal = document.getElementById('metrics-modal');
+    const metricsModalClose = document.getElementById('metrics-modal-close');
+    const metricsBody = document.getElementById('metrics-body');
+    const metricsStatus = document.getElementById('metrics-status');
     const mockupsBtn = document.getElementById('mockups-btn');
     const mockupsMenu = document.getElementById('mockups-menu');
     const mockupsDropdown = document.getElementById('mockups-dropdown');
@@ -142,6 +147,13 @@
     prdForm.addEventListener('submit', onSavePRD);
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !prdModal.classList.contains('hidden')) closePRD();
+    });
+
+    metricsBtn.addEventListener('click', openMetrics);
+    metricsModalClose.addEventListener('click', closeMetrics);
+    metricsModal.addEventListener('click', (e) => { if (e.target === metricsModal) closeMetrics(); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !metricsModal.classList.contains('hidden')) closeMetrics();
     });
 
     mockupsBtn.addEventListener('click', toggleMockupsMenu);
@@ -831,6 +843,112 @@
             throw new Error(msg);
         }
         return data;
+    }
+
+    // ---- Metrics -----------------------------------------------------------
+
+    async function openMetrics() {
+        metricsModal.classList.remove('hidden');
+        metricsBody.innerHTML = '';
+        metricsStatus.textContent = 'Loading...';
+        metricsStatus.className = 'status-msg';
+        try {
+            const data = await apiGet('/api/metrics');
+            renderMetrics(data || {});
+            metricsStatus.textContent = '';
+        } catch (err) {
+            metricsStatus.textContent = `Load failed: ${err.message || err}`;
+            metricsStatus.className = 'status-msg err';
+        }
+    }
+
+    function closeMetrics() {
+        metricsModal.classList.add('hidden');
+    }
+
+    function renderMetrics(data) {
+        const totals = data.totals || {};
+        const pct = totals.completion_pct || 0;
+        const statusClass = {
+            'TODO': 'todo', 'PLANNED': 'planned', 'IN PROGRESS': 'progress',
+            'REVIEW': 'review', 'DONE': 'done',
+        };
+        let html = `
+            <div class="metrics-hero">
+                <div class="metrics-pct">${pct}<span>%</span></div>
+                <div class="metrics-hero-detail">
+                    <div class="metrics-bar"><div class="metrics-bar-fill" style="width:${Math.min(pct, 100)}%"></div></div>
+                    <div class="metrics-hero-caption">
+                        ${totals.done_points || 0}/${totals.points || 0} points ·
+                        ${totals.done_specs || 0}/${totals.specs || 0} specs done ·
+                        ${totals.wip_specs || 0} in flight
+                    </div>
+                </div>
+            </div>
+            <div class="metrics-statuses">`;
+        (data.by_status || []).forEach((b) => {
+            const cls = statusClass[b.status] || 'todo';
+            html += `<div class="metrics-status st-${cls}"><span class="metrics-status-num">${b.specs}</span><span class="metrics-status-label">${escapeHtml(b.status)}</span></div>`;
+        });
+        html += '</div>';
+
+        const epics = data.by_epic || [];
+        if (epics.length > 0) {
+            html += '<h3 class="metrics-section-title">Epics</h3><div class="metrics-epics">';
+            epics.forEach((e) => {
+                const epct = e.completion_pct || 0;
+                html += `
+                    <div class="metrics-epic">
+                        <div class="metrics-epic-head">
+                            <span class="metrics-epic-code">${escapeHtml(e.code)}</span>
+                            <span class="metrics-epic-title">${escapeHtml(e.title || '')}</span>
+                            <span class="metrics-epic-pct">${epct}%</span>
+                        </div>
+                        <div class="metrics-bar slim"><div class="metrics-bar-fill" style="width:${Math.min(epct, 100)}%"></div></div>
+                        <div class="metrics-epic-caption">${e.done_points || 0}/${e.points || 0} points · ${e.done_specs || 0}/${e.specs || 0} specs</div>
+                    </div>`;
+            });
+            html += '</div>';
+        }
+
+        if (data.flow) {
+            html += `
+                <h3 class="metrics-section-title">Flow</h3>
+                <div class="metrics-flow">
+                    <div class="metrics-flow-item"><span class="metrics-flow-num">${fmtDuration(data.flow.avg_cycle_seconds)}</span><span class="metrics-flow-label">avg cycle time</span></div>
+                    <div class="metrics-flow-item"><span class="metrics-flow-num">${fmtDuration(data.flow.avg_lead_seconds)}</span><span class="metrics-flow-label">avg lead time</span></div>
+                    <div class="metrics-flow-item"><span class="metrics-flow-num">${data.flow.measured_specs}</span><span class="metrics-flow-label">specs measured</span></div>
+                </div>`;
+        }
+
+        const rework = data.rework || [];
+        const blocked = data.blocked || [];
+        if (rework.length > 0 || blocked.length > 0) {
+            html += '<h3 class="metrics-section-title">Attention</h3><ul class="metrics-attention">';
+            rework.forEach((code) => {
+                html += `<li><span class="metrics-flag rework">rework</span> ${escapeHtml(code)} came back from review with feedback</li>`;
+            });
+            blocked.forEach((b) => {
+                html += `<li><span class="metrics-flag blocked">blocked</span> ${escapeHtml(b.code)} waits on ${escapeHtml((b.blocked_by || []).join(', '))}</li>`;
+            });
+            html += '</ul>';
+        }
+
+        if ((totals.specs || 0) === 0) {
+            html = '<div class="empty-board">No specs in the backlog yet.</div>';
+        }
+        metricsBody.innerHTML = html;
+    }
+
+    function fmtDuration(seconds) {
+        const s = Number(seconds) || 0;
+        if (s < 60) return `${s}s`;
+        const mins = Math.floor(s / 60);
+        if (mins < 60) return `${mins}m`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}h ${mins % 60}m`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ${hours % 24}h`;
     }
 
     // ---- PRD & Mockups -----------------------------------------------------

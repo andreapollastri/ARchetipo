@@ -4,6 +4,11 @@
 // it lives in BACKLOG.md or as a GitHub issue.
 package domain
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Priority of a spec. Stable string set so the JSON output is deterministic.
 type Priority string
 
@@ -86,6 +91,17 @@ type Spec struct {
 	// badge in the board) signalling that archetipo-plan must turn that feedback
 	// into Fix tasks. Cleared automatically when the spec is re-planned.
 	Rework bool `json:"rework,omitempty" yaml:"rework,omitempty"`
+	// History records the spec's workflow transitions in chronological order,
+	// starting with the status it was created with. Connectors that cannot
+	// persist it leave it empty; `archetipo metrics` derives cycle and lead
+	// time only from specs that carry it.
+	History []StatusChange `json:"history,omitempty" yaml:"history,omitempty"`
+}
+
+// StatusChange is one entry of a spec's status history. At is RFC3339 UTC.
+type StatusChange struct {
+	Status Status `json:"status" yaml:"status"`
+	At     string `json:"at" yaml:"at"`
 }
 
 // Task is a unit of work inside a Spec's implementation plan.
@@ -289,4 +305,35 @@ type ReviewComment struct {
 // the review is cleared.
 type Review struct {
 	Comments []ReviewComment `json:"comments" yaml:"comments"`
+}
+
+// ReworkFeedbackHeading is the markdown heading under which request-changes
+// records the review comments. archetipo-plan keys off this heading to detect a
+// rework cycle.
+const ReworkFeedbackHeading = "## Rework Feedback"
+
+// AppendReworkFeedback appends a Rework Feedback section to the spec body, one
+// bullet per review comment anchored to its file:line when present.
+// archetipo-plan turns each bullet into a Fix task.
+func AppendReworkFeedback(body string, comments []ReviewComment) string {
+	var b strings.Builder
+	if trimmed := strings.TrimRight(body, "\n"); trimmed != "" {
+		b.WriteString(trimmed)
+		b.WriteString("\n\n")
+	}
+	b.WriteString(ReworkFeedbackHeading)
+	b.WriteString("\n\n<!-- Added by request-changes. archetipo-plan converts each item into a Fix task. -->\n\n")
+	for _, c := range comments {
+		text := strings.ReplaceAll(strings.TrimSpace(c.Body), "\n", " ")
+		anchor := c.File
+		if anchor != "" && c.Line > 0 {
+			anchor = fmt.Sprintf("%s:%d", c.File, c.Line)
+		}
+		if anchor == "" {
+			fmt.Fprintf(&b, "- %s\n", text)
+			continue
+		}
+		fmt.Fprintf(&b, "- **%s** — %s\n", anchor, text)
+	}
+	return b.String()
 }
