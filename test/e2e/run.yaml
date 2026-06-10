@@ -55,7 +55,5 @@ scenarios:
   worktree-implement-no-integrate:
     agent: pi-go-ds4-flash
     fixture: fixtures/worktree-plan
-    archetipo_pre_commands:
-      - spec start US-001
     prompts:
       - /archetipo-implement US-001

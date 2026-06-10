@@ -151,5 +151,5 @@ Proceeding.
 **Optional improvements left open:**
 - [Improvement title] — `path/to/file.ts:NN` — [brief suggestion]
 
-⚠️ The spec is in Review. Moving to {config.workflow.statuses.done} is manual.
+⚠️ The spec is in Review. Run `/archetipo-review {US-CODE}` to accept it or send it back with feedback.
 ```

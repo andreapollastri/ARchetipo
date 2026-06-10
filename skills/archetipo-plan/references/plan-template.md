@@ -50,7 +50,7 @@
 ### E2E Tests — User Simulation
 
 **Framework:** {DETECTED_E2E_FRAMEWORK}
-**Video recording:** Enabled for all scenarios
+**Video recording:** Demo scenario only (per the spec's `Demonstrates` field); other scenarios run unrecorded
 
 | Scenario | User flow description |
 |---|---|

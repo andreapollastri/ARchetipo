@@ -117,14 +117,21 @@ Silently perform all of the following — this is your chain of thought, not vis
 - Define test strategy: what to test, test type (unit/integration/e2e), coverage focus
 - **If the spec involves UI or user interaction**, Mina MUST define an e2e testing strategy that includes:
   - User scenarios to simulate (complete user flows, not isolated clicks — e.g., "user registers, logs in, creates first project")
-  - Video recording enabled for every e2e scenario (to produce visual artifacts of test runs), with videos saved in `{config.paths.test_results}/{spec-id}/`
+  - Video recording for the **single demo scenario only**, when the spec's `Demonstrates` field describes a filmable user-visible increment, with the video saved in `{config.paths.test_results}/{spec-id}/`. All e2e scenarios run, but only the demo scenario records video — the implement skill's "Mina's E2E policy" owns the final record/skip decision
   - The e2e framework to use, detected from the project (existing config files, `package.json`, agent instructions files, and current repository conventions). Do NOT hardcode any specific framework — adapt to whatever the project uses
-  - If no e2e infrastructure exists in the project, include a setup task (TASK) in the task list for installing and configuring the framework, including video recording support
+  - If no e2e infrastructure exists in the project, include a setup task (TASK) in the task list for installing and configuring the framework, including video recording support scoped to the demo scenario
   - **This e2e strategy MUST be included in the planning document — it is not optional.** The implement skill will only write e2e tests if this strategy is present in the plan. Omitting the e2e strategy for a UI spec is a planning error.
 
 #### UI/UX Assessment & Mockup Spawn
 
-If the spec requires **new user interface** (new pages, significant UI components, or substantial layout changes):
+Decide whether the spec needs mockups using these explicit triggers. The spec needs mockups when **at least one** holds:
+- It introduces a **new page, screen, or route** that does not exist yet
+- It introduces a **new user-facing component** with its own layout (form, wizard, dashboard widget, modal flow — not a single field or button added to an existing form)
+- It **restructures the layout** of an existing page (sections added/removed/rearranged), as opposed to changing copy, colors, or styling of what is already there
+
+The spec does NOT need mockups when it only: changes text/labels, adds a field to an existing form, tweaks styling within the current layout, or has no user-facing surface at all. When in doubt between "new component" and "small addition", prefer no mockup and note the call in the Team Brief so the user can override.
+
+If the spec requires mockups per the triggers above:
 
 **If subagent/worker support is available:**
 1. Spawn an agent that invokes `/archetipo-design` with:
@@ -170,6 +177,8 @@ Construct the full JSON payload string in your own context (not via shell heredo
 ```json
 {"plan_body":"<technical solution + test strategy as markdown>","tasks":[{"id":"TASK-01","title":"...","description":"...","type":"Impl|Test","status":"TODO","dependencies":[]}]}
 ```
+
+> **Payload field contracts:** `status` uses the CLI's canonical values (`TODO`, `DONE`) — these are part of the envelope contract and are **not** the display labels from `config.workflow.statuses`. `type` is one of `Impl`, `Test`, or `Fix` (Fix only in rework mode). `dependencies` lists ids of tasks defined in the same payload; the CLI rejects references to unknown task ids.
 
 **Rework mode task construction.** When the spec is in rework (see Step 2), build the `tasks` array like this instead of planning from scratch:
 - **Preserve every existing task** from `data.tasks` with its current `status` (tasks already `DONE` stay `DONE`). The payload replaces the whole task list, so omitting them would lose history.
