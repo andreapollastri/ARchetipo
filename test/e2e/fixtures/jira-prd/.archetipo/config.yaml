@@ -1,0 +1,31 @@
+connector:  jira
+
+# Shared paths — used by every connector.
+paths:
+  prd: docs/PRD.md
+  mockups: docs/mockups/
+  test_results: docs/test-results/
+
+workflow:
+  statuses:
+    todo: TODO
+    planned: PLANNED
+    in_progress: IN PROGRESS
+    review: REVIEW
+    done: DONE        # human-gated: only /archetipo-review moves a spec here, after explicit user approval
+
+
+jira:
+   base_url: https://agilereloaded.atlassian.net/
+   # project_key omitted: the CLI finds (or creates) a project named after the
+   # sandbox directory and persists the key here on first run.
+   story_type: Task               # issue type for specs (default: Story)
+   subtask_type: Sub-task         # issue type for plan tasks (default: Sub-task)
+   #points_field: customfield_10016  # story points custom field id (optional)
+   # status_map omitted: this instance shows Italian status names ("In corso",
+   # "Completata", "In revisione"), but auto-matching resolves them through the
+   # untranslatedName the API pairs with every translated status.
+   priority_map:                  # canonical priority -> Jira priority name
+     HIGH: High
+     MEDIUM: Medium
+     LOW: Low

@@ -1,6 +1,7 @@
 package jira
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -130,6 +131,85 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// adfFromText converts ARchetipo markdown/plain text into the smallest ADF
+// shape Jira v3 accepts, preserving the original text paragraph by paragraph.
+func adfFromText(s string) map[string]any {
+	lines := strings.Split(s, "\n")
+	content := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		paragraph := map[string]any{"type": "paragraph"}
+		if line != "" {
+			paragraph["content"] = []map[string]any{{
+				"type": "text",
+				"text": line,
+			}}
+		}
+		content = append(content, paragraph)
+	}
+	if len(content) == 0 {
+		content = append(content, map[string]any{"type": "paragraph"})
+	}
+	return map[string]any{
+		"type":    "doc",
+		"version": 1,
+		"content": content,
+	}
+}
+
+// textFromADF accepts both Jira v3 ADF documents and legacy plain strings. It
+// extracts text leaves in document order and keeps paragraph boundaries as
+// newline separators so ARchetipo markers still round-trip.
+func textFromADF(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var legacy string
+	if err := json.Unmarshal(raw, &legacy); err == nil {
+		return legacy
+	}
+	var doc any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return ""
+	}
+	var paragraphs []string
+	collectADFParagraphs(doc, &paragraphs)
+	return strings.TrimSpace(strings.Join(paragraphs, "\n"))
+}
+
+func collectADFParagraphs(v any, out *[]string) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	if typ, _ := m["type"].(string); typ == "paragraph" {
+		var b strings.Builder
+		collectADFText(m["content"], &b)
+		*out = append(*out, b.String())
+		return
+	}
+	if children, ok := m["content"].([]any); ok {
+		for _, child := range children {
+			collectADFParagraphs(child, out)
+		}
+	}
+}
+
+func collectADFText(v any, b *strings.Builder) {
+	switch x := v.(type) {
+	case []any:
+		for _, child := range x {
+			collectADFText(child, b)
+		}
+	case map[string]any:
+		if text, ok := x["text"].(string); ok {
+			b.WriteString(text)
+		}
+		if children, ok := x["content"].([]any); ok {
+			collectADFText(children, b)
+		}
+	}
 }
 
 // writeFile mirrors filefs.writeFile (the jira connector still persists the PRD

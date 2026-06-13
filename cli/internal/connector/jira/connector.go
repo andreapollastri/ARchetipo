@@ -95,7 +95,7 @@ func (c *Connector) ReadPlanBody(ctx context.Context, specCode string) (string, 
 		return "", err
 	}
 	var issue jiraIssue
-	if err := c.do(ctx, "GET", "/rest/api/2/issue/"+key+"?fields=description", nil, &issue); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/issue/"+key+"?fields=description", nil, &issue); err != nil {
 		return "", err
 	}
 	desc, _ := parseDescription(c.decodeFields(issue).Description)
@@ -112,14 +112,20 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 	if err := c.loadCredentials(); err != nil {
 		return domain.SetupInfo{}, err
 	}
-	c.buildMaps()
-	// Verify auth and base URL with a cheap, side-effect-free call.
+	// Verify auth and base URL with a cheap, side-effect-free call. The
+	// account id becomes the lead of an auto-created project.
 	var me struct {
 		AccountID string `json:"accountId"`
 	}
-	if err := c.do(ctx, "GET", "/rest/api/2/myself", nil, &me); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/myself", nil, &me); err != nil {
 		return domain.SetupInfo{}, err
 	}
+	// Resolve project + status map BEFORE buildMaps so the maps consume the
+	// discovered status_map instead of the identity defaults.
+	if err := c.resolveProject(ctx, me.AccountID); err != nil {
+		return domain.SetupInfo{}, err
+	}
+	c.buildMaps()
 	c.ready = true
 	return domain.SetupInfo{
 		Connector:   config.ConnectorJira,
@@ -130,6 +136,8 @@ func (c *Connector) InitializeConnector(ctx context.Context) (domain.SetupInfo, 
 }
 
 // loadCredentials resolves email + token. The token is environment-only.
+// project_key is intentionally NOT required here: resolveProject detects or
+// creates the Jira project when the key is missing.
 func (c *Connector) loadCredentials() error {
 	c.email = strings.TrimSpace(c.jira.Email)
 	if c.email == "" {
@@ -137,10 +145,13 @@ func (c *Connector) loadCredentials() error {
 	}
 	c.token = strings.TrimSpace(os.Getenv("JIRA_API_TOKEN"))
 	if c.jira.BaseURL == "" {
-		return iox.NewInvalidInput("jira.base_url is not set", "set jira.base_url in .archetipo/config.yaml", nil)
+		// In-memory only: an env-sourced base_url must not be written back to
+		// config.yaml by Save(), so c.cfg.Jira.BaseURL stays empty.
+		c.jira.BaseURL = strings.TrimSpace(os.Getenv("JIRA_BASE_URL"))
 	}
-	if c.jira.ProjectKey == "" {
-		return iox.NewInvalidInput("jira.project_key is not set", "set jira.project_key in .archetipo/config.yaml", nil)
+	if c.jira.BaseURL == "" {
+		return iox.NewInvalidInput("jira.base_url is not set",
+			"set jira.base_url in .archetipo/config.yaml or export JIRA_BASE_URL", nil)
 	}
 	if c.email == "" || c.token == "" {
 		return iox.NewConnector(iox.CodeConnectorAuth,
@@ -300,7 +311,7 @@ func (c *Connector) ReadSpecDetail(ctx context.Context, ref string) (domain.Spec
 		return domain.Spec{}, err
 	}
 	var issue jiraIssue
-	if err := c.do(ctx, "GET", "/rest/api/2/issue/"+key+"?fields="+c.specFields(), nil, &issue); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/issue/"+key+"?fields="+c.specFields(), nil, &issue); err != nil {
 		return domain.Spec{}, err
 	}
 	return c.specFromIssue(issue), nil
@@ -415,7 +426,7 @@ func (c *Connector) createSpecs(ctx context.Context, specs []domain.Spec) (domai
 			"labels":    c.specLabels(s),
 		}
 		if desc := renderDescription(s.Body, s.Epic); desc != "" {
-			fields["description"] = desc
+			fields["description"] = adfFromText(desc)
 		}
 		if pr := c.priorityName(s.Priority); pr != "" {
 			fields["priority"] = map[string]string{"name": pr}
@@ -426,7 +437,7 @@ func (c *Connector) createSpecs(ctx context.Context, specs []domain.Spec) (domai
 		var created struct {
 			Key string `json:"key"`
 		}
-		if err := c.do(ctx, "POST", "/rest/api/2/issue", map[string]any{"fields": fields}, &created); err != nil {
+		if err := c.do(ctx, "POST", "/rest/api/3/issue", map[string]any{"fields": fields}, &created); err != nil {
 			return domain.WriteResult{}, err
 		}
 		c.keyByCode[s.Code] = created.Key
@@ -454,13 +465,13 @@ func (c *Connector) SavePlan(ctx context.Context, specRef string, plan domain.Pl
 	// Append the strategic plan body to the story description, preserving the
 	// epic marker.
 	var issue jiraIssue
-	if err := c.do(ctx, "GET", "/rest/api/2/issue/"+key+"?fields=description", nil, &issue); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/issue/"+key+"?fields=description", nil, &issue); err != nil {
 		return domain.WriteResult{}, err
 	}
 	current := c.decodeFields(issue).Description
 	updated := strings.TrimRight(current, "\n") + "\n\n---\n\n" + strings.TrimSpace(plan.PlanBody)
-	if err := c.do(ctx, "PUT", "/rest/api/2/issue/"+key,
-		map[string]any{"fields": map[string]any{"description": updated}}, nil); err != nil {
+	if err := c.do(ctx, "PUT", "/rest/api/3/issue/"+key,
+		map[string]any{"fields": map[string]any{"description": adfFromText(updated)}}, nil); err != nil {
 		return domain.WriteResult{}, err
 	}
 	refs := []domain.Ref{{Code: specRef, URL: c.browseURL(key)}}
@@ -470,12 +481,12 @@ func (c *Connector) SavePlan(ctx context.Context, specRef string, plan domain.Pl
 			"parent":      map[string]string{"key": key},
 			"summary":     t.ID + ": " + t.Title,
 			"issuetype":   map[string]string{"name": c.subtaskType()},
-			"description": renderTaskDescription(t),
+			"description": adfFromText(renderTaskDescription(t)),
 		}
 		var created struct {
 			Key string `json:"key"`
 		}
-		if err := c.do(ctx, "POST", "/rest/api/2/issue", map[string]any{"fields": fields}, &created); err != nil {
+		if err := c.do(ctx, "POST", "/rest/api/3/issue", map[string]any{"fields": fields}, &created); err != nil {
 			return domain.WriteResult{}, err
 		}
 		refs = append(refs, domain.Ref{Code: t.ID, URL: c.browseURL(created.Key)})
@@ -510,12 +521,12 @@ func (c *Connector) transition(ctx context.Context, key string, newStatus domain
 			} `json:"to"`
 		} `json:"transitions"`
 	}
-	if err := c.do(ctx, "GET", "/rest/api/2/issue/"+key+"/transitions", nil, &resp); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/issue/"+key+"/transitions", nil, &resp); err != nil {
 		return err
 	}
 	for _, t := range resp.Transitions {
 		if strings.EqualFold(t.To.Name, target) {
-			return c.do(ctx, "POST", "/rest/api/2/issue/"+key+"/transitions",
+			return c.do(ctx, "POST", "/rest/api/3/issue/"+key+"/transitions",
 				map[string]any{"transition": map[string]string{"id": t.ID}}, nil)
 		}
 	}
@@ -546,8 +557,8 @@ func (c *Connector) PostComment(ctx context.Context, specRef, body string) (doma
 	if err != nil {
 		return domain.WriteResult{}, err
 	}
-	if err := c.do(ctx, "POST", "/rest/api/2/issue/"+key+"/comment",
-		map[string]any{"body": body}, nil); err != nil {
+	if err := c.do(ctx, "POST", "/rest/api/3/issue/"+key+"/comment",
+		map[string]any{"body": adfFromText(body)}, nil); err != nil {
 		return domain.WriteResult{}, err
 	}
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: specRef, URL: c.browseURL(key)}}}, nil
@@ -564,7 +575,7 @@ func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain
 	// Read the current issue so partial body/epic edits can be merged into the
 	// stored description (which carries the epic marker).
 	var issue jiraIssue
-	if err := c.do(ctx, "GET", "/rest/api/2/issue/"+key+"?fields="+c.specFields(), nil, &issue); err != nil {
+	if err := c.do(ctx, "GET", "/rest/api/3/issue/"+key+"?fields="+c.specFields(), nil, &issue); err != nil {
 		return domain.WriteResult{}, err
 	}
 	cur := c.specFromIssue(issue)
@@ -590,12 +601,12 @@ func (c *Connector) UpdateSpec(ctx context.Context, specRef string, patch domain
 		fields["labels"] = c.specLabels(domain.Spec{Epic: epic})
 	}
 	if patch.Body != nil || patch.Epic != nil {
-		fields["description"] = renderDescription(body, epic)
+		fields["description"] = adfFromText(renderDescription(body, epic))
 	}
 	if len(fields) == 0 {
 		return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: cur.Code, URL: c.browseURL(key)}}}, nil
 	}
-	if err := c.do(ctx, "PUT", "/rest/api/2/issue/"+key, map[string]any{"fields": fields}, nil); err != nil {
+	if err := c.do(ctx, "PUT", "/rest/api/3/issue/"+key, map[string]any{"fields": fields}, nil); err != nil {
 		return domain.WriteResult{}, err
 	}
 	return domain.WriteResult{OK: true, Refs: []domain.Ref{{Code: cur.Code, URL: c.browseURL(key)}}}, nil
@@ -651,28 +662,29 @@ func (c *Connector) searchSpecs(ctx context.Context) ([]domain.Spec, error) {
 // search runs a paginated JQL query and returns all matching issues.
 func (c *Connector) search(ctx context.Context, jql string, fields []string) ([]jiraIssue, error) {
 	var out []jiraIssue
-	startAt := 0
+	nextPageToken := ""
 	for {
 		body := map[string]any{
 			"jql":        jql,
 			"fields":     fields,
-			"startAt":    startAt,
 			"maxResults": 100,
 		}
-		var resp struct {
-			StartAt    int         `json:"startAt"`
-			MaxResults int         `json:"maxResults"`
-			Total      int         `json:"total"`
-			Issues     []jiraIssue `json:"issues"`
+		if nextPageToken != "" {
+			body["nextPageToken"] = nextPageToken
 		}
-		if err := c.do(ctx, "POST", "/rest/api/2/search", body, &resp); err != nil {
+		var resp struct {
+			Issues        []jiraIssue `json:"issues"`
+			IsLast        bool        `json:"isLast"`
+			NextPageToken string      `json:"nextPageToken"`
+		}
+		if err := c.do(ctx, "POST", "/rest/api/3/search/jql", body, &resp); err != nil {
 			return nil, err
 		}
 		out = append(out, resp.Issues...)
-		startAt += len(resp.Issues)
-		if len(resp.Issues) == 0 || startAt >= resp.Total {
+		if resp.IsLast || resp.NextPageToken == "" || len(resp.Issues) == 0 {
 			break
 		}
+		nextPageToken = resp.NextPageToken
 	}
 	return out, nil
 }
@@ -685,12 +697,13 @@ type jiraIssue struct {
 }
 
 type knownFields struct {
-	Summary     string     `json:"summary"`
-	Description string     `json:"description"`
-	Labels      []string   `json:"labels"`
-	Status      *jiraNamed `json:"status"`
-	Priority    *jiraNamed `json:"priority"`
-	IssueType   *jiraNamed `json:"issuetype"`
+	Summary        string          `json:"summary"`
+	DescriptionRaw json.RawMessage `json:"description"`
+	Description    string          `json:"-"`
+	Labels         []string        `json:"labels"`
+	Status         *jiraNamed      `json:"status"`
+	Priority       *jiraNamed      `json:"priority"`
+	IssueType      *jiraNamed      `json:"issuetype"`
 }
 
 type jiraNamed struct {
@@ -700,6 +713,7 @@ type jiraNamed struct {
 func (c *Connector) decodeFields(it jiraIssue) knownFields {
 	var f knownFields
 	_ = json.Unmarshal(it.Fields, &f)
+	f.Description = textFromADF(f.DescriptionRaw)
 	return f
 }
 

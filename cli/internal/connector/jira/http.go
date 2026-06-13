@@ -1,8 +1,8 @@
 // Package jira implements the Connector interface against Jira Cloud using the
-// REST API v2. v2 (rather than v3) is used deliberately: it accepts and returns
-// the issue `description` as a plain string, avoiding the Atlassian Document
-// Format round-trip that would otherwise mangle the markdown bodies ARchetipo
-// stores. All HTTP goes through Doer so tests can inject a fake transport.
+// REST API v3. Jira v3 stores rich text fields as Atlassian Document Format; the
+// connector converts those fields to and from plain text so ARchetipo can keep
+// persisting markdown bodies deterministically. All HTTP goes through Doer so
+// tests can inject a fake transport.
 package jira
 
 import (
@@ -29,7 +29,7 @@ type Doer interface {
 func NewRealDoer() Doer { return &http.Client{Timeout: 30 * time.Second} }
 
 // do performs an authenticated REST call. method/path are the HTTP verb and the
-// path relative to BaseURL (e.g. "/rest/api/2/issue"). body, when non-nil, is
+// path relative to BaseURL (e.g. "/rest/api/3/issue"). body, when non-nil, is
 // JSON-encoded as the request payload. out, when non-nil, receives the decoded
 // JSON response. A non-2xx status is mapped to a typed connector error.
 func (c *Connector) do(ctx context.Context, method, path string, body, out any) error {

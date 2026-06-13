@@ -304,3 +304,139 @@ func TestSave_CreatesFileWhenMissing(t *testing.T) {
 		t.Errorf("fresh config missing github keys:\n%s", s)
 	}
 }
+
+func TestLoad_JiraProjectKeyOptional(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(`connector: jira
+jira:
+  base_url: https://acme.atlassian.net
+`), 0o644))
+
+	c, err := Load(root)
+	if err != nil {
+		t.Fatalf("project_key should be optional (auto-detected on first run): %v", err)
+	}
+	if c.Jira.ProjectKey != "" {
+		t.Errorf("project_key: %q", c.Jira.ProjectKey)
+	}
+}
+
+func TestLoad_JiraBaseURLRequiredWithoutEnv(t *testing.T) {
+	t.Setenv("JIRA_BASE_URL", "")
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(`connector: jira
+`), 0o644))
+
+	_, err := Load(root)
+	if err == nil || !strings.Contains(err.Error(), "jira.base_url") {
+		t.Fatalf("expected jira.base_url error, got %v", err)
+	}
+}
+
+func TestLoad_JiraBaseURLEnvFallback(t *testing.T) {
+	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net")
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(`connector: jira
+`), 0o644))
+
+	if _, err := Load(root); err != nil {
+		t.Fatalf("JIRA_BASE_URL should satisfy base_url requirement: %v", err)
+	}
+}
+
+func TestSave_PatchesJiraKeysPreservingComments(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	initial := `connector: jira
+paths:
+  prd: docs/PRD.md
+
+jira:
+  # project_key is auto-detected on first run
+  base_url: https://acme.atlassian.net
+`
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(initial), 0o644))
+
+	c, err := Load(root)
+	must(t, err)
+	c.Jira.ProjectKey = "ARCH"
+	c.Jira.StatusMap = map[string]string{"TODO": "To Do", "DONE": "Done"}
+	must(t, c.Save())
+
+	out, err := os.ReadFile(filepath.Join(root, RelativePath))
+	must(t, err)
+	s := string(out)
+	for _, want := range []string{
+		"# project_key is auto-detected on first run",
+		"base_url: https://acme.atlassian.net",
+		"project_key: ARCH",
+		"status_map:",
+		"TODO: To Do",
+		"DONE: Done",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in saved file:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "github:") {
+		t.Errorf("jira connector save must not inject a github section:\n%s", s)
+	}
+}
+
+func TestSave_ReusesEmptyJiraSectionFromTemplate(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, ".archetipo"), 0o755))
+	// Mirrors the shipped template: `jira:` followed only by commented keys,
+	// i.e. a null value node that Save must convert in place.
+	initial := `connector: jira
+jira:
+# base_url: https://example.atlassian.net
+# project_key: ARCH
+`
+	must(t, os.WriteFile(filepath.Join(root, RelativePath), []byte(initial), 0o644))
+
+	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net")
+	c, err := Load(root)
+	must(t, err)
+	c.Jira.ProjectKey = "AID"
+	must(t, c.Save())
+
+	raw, err := os.ReadFile(filepath.Join(root, RelativePath))
+	must(t, err)
+	s := string(raw)
+	if strings.Count(s, "jira:") != 1 {
+		t.Fatalf("expected a single jira section, got:\n%s", s)
+	}
+	if !strings.Contains(s, "project_key: AID") {
+		t.Errorf("missing project_key in saved file:\n%s", s)
+	}
+	// base_url came from env only: it must NOT be written to the file.
+	if strings.Contains(s, "base_url: https://acme.atlassian.net") {
+		t.Errorf("env-sourced base_url must not be persisted:\n%s", s)
+	}
+}
+
+func TestSave_CreatesFileWithJiraSection(t *testing.T) {
+	root := t.TempDir()
+	c := Default()
+	c.ProjectRoot = root
+	c.Connector = ConnectorJira
+	c.Jira.BaseURL = "https://acme.atlassian.net"
+	c.Jira.ProjectKey = "ARCH"
+	must(t, c.Save())
+
+	raw, err := os.ReadFile(filepath.Join(root, RelativePath))
+	must(t, err)
+	s := string(raw)
+	for _, want := range []string{"connector: jira", "jira:", "project_key: ARCH"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("fresh config missing %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "github:") {
+		t.Errorf("jira bootstrap must not emit a github section:\n%s", s)
+	}
+}

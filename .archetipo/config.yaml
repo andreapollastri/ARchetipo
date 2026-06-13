@@ -47,15 +47,20 @@ github:
 
 # Used only when connector == jira. The API token is read from the
 # JIRA_API_TOKEN env var (never stored here); the email from JIRA_EMAIL or the
-# jira.email key below.
+# jira.email key below. project_key and status_map are resolved automatically
+# on first run: the CLI finds (or creates — requires the Administer Jira
+# permission) a project named after the project directory, matches the
+# canonical workflow statuses against the Jira workflow, and writes both keys
+# back here. Note: workflow.statuses above are display labels; status_map maps
+# the canonical statuses onto the names the Jira project actually uses.
 jira:
-  # base_url: https://acme.atlassian.net
-  # project_key: ARCH
+  # base_url: https://acme.atlassian.net  # or export JIRA_BASE_URL
+  # project_key: ARCH              # auto-detected/created from the directory name on first run
   # email: you@acme.com            # optional; falls back to $JIRA_EMAIL
   # story_type: Story              # issue type for specs (default: Story)
   # subtask_type: Sub-task         # issue type for plan tasks (default: Sub-task)
   # points_field: customfield_10016  # story points custom field id (optional)
-  # status_map:                    # canonical workflow status -> Jira status name
+  # status_map:                    # auto-discovered from the Jira workflow on first run; override to correct
   #   TODO: To Do
   #   PLANNED: Selected for Development
   #   IN PROGRESS: In Progress

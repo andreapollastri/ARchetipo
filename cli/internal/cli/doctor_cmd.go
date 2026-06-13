@@ -129,16 +129,18 @@ func runDoctorChecks(ctx context.Context) []doctorCheck {
 	return checks
 }
 
-// checkJira verifies the jira connector has the base URL, project key and the
-// credentials it needs. It does not hit the network (a failing token would be
-// surfaced at the first real operation).
+// checkJira verifies the jira connector has the base URL and the credentials
+// it needs. project_key is not required: the connector auto-detects (or
+// creates) the project on first run. It does not hit the network (a failing
+// token would be surfaced at the first real operation).
 func checkJira(cfg config.Config) doctorCheck {
 	var missing []string
-	if cfg.Jira.BaseURL == "" {
-		missing = append(missing, "jira.base_url")
+	baseURL := cfg.Jira.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("JIRA_BASE_URL")
 	}
-	if cfg.Jira.ProjectKey == "" {
-		missing = append(missing, "jira.project_key")
+	if baseURL == "" {
+		missing = append(missing, "jira.base_url (or JIRA_BASE_URL)")
 	}
 	email := cfg.Jira.Email
 	if email == "" {
@@ -154,10 +156,14 @@ func checkJira(cfg config.Config) doctorCheck {
 		return doctorCheck{
 			name:   "jira",
 			detail: "missing: " + strings.Join(missing, ", "),
-			hint:   "set base_url/project_key in .archetipo/config.yaml and export JIRA_EMAIL + JIRA_API_TOKEN",
+			hint:   "set jira.base_url in .archetipo/config.yaml and export JIRA_EMAIL + JIRA_API_TOKEN; project_key is auto-detected on first run",
 		}
 	}
-	return doctorCheck{name: "jira", ok: true, detail: fmt.Sprintf("%s project %s (%s)", cfg.Jira.BaseURL, cfg.Jira.ProjectKey, email)}
+	project := cfg.Jira.ProjectKey
+	if project == "" {
+		project = "auto-detect (dir " + filepath.Base(cfg.ProjectRoot) + ")"
+	}
+	return doctorCheck{name: "jira", ok: true, detail: fmt.Sprintf("%s project %s (%s)", baseURL, project, email)}
 }
 
 func checkPackagedSkills(dataDir string) doctorCheck {

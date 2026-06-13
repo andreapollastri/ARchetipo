@@ -150,8 +150,9 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
     if (!agent) {
       throw new Error(`scenarios.${scenarioId} references unknown agent '${agentId}' in ${configPath}`);
     }
-    if (!Array.isArray(rawScenario.prompts) || rawScenario.prompts.length === 0 || !rawScenario.prompts.every((prompt) => typeof prompt === "string")) {
-      throw new Error(`scenarios.${scenarioId}.prompts must be a non-empty list of strings in ${configPath}`);
+    const prompts = rawScenario.prompts ?? [];
+    if (!Array.isArray(prompts) || !prompts.every((prompt) => typeof prompt === "string")) {
+      throw new Error(`scenarios.${scenarioId}.prompts must be a list of strings when specified in ${configPath}`);
     }
     if (rawScenario.fixture !== undefined && (typeof rawScenario.fixture !== "string" || rawScenario.fixture.trim() === "")) {
       throw new Error(`scenarios.${scenarioId}.fixture must be a non-empty string when specified in ${configPath}`);
@@ -168,7 +169,7 @@ function normalizeConfig(manifest, configPath, filterScenarios) {
       id: scenarioId,
       agentId,
       agent: { id: agentId, ...agent },
-      prompts: rawScenario.prompts,
+      prompts,
       env_required: rawScenario.env_required ?? agent.env_required,
       fixture: rawScenario.fixture,
       archetipo_pre_commands: rawScenario.archetipo_pre_commands ?? [],
@@ -328,7 +329,7 @@ async function runConfiguredScenario({ scenario, configPath, timeoutMs, cliSourc
       const prompt = scenario.prompts[index];
       const step = `prompt-${index + 1}`;
       const invocation = buildPromptInvocation(context, prompt);
-      logRunStepStart(scenario.id, step, `Running ${invocation.skill}`);
+      logRunStepStart(scenario.id, step, `Running ${invocation.label}`);
       const promptRun = await runReportedCommand({
         ...context,
         step,
@@ -647,17 +648,23 @@ async function verifyInstallation(context) {
 }
 
 function deriveSkillNames(prompts) {
-  return [...new Set(prompts.map(deriveSkillName).filter(Boolean).map((skill) => skill.replace(/^\/+/, "")))];
+  return [...new Set(prompts.map(deriveSkillName).filter(Boolean))];
 }
 
 function deriveSkillName(prompt) {
-  return String(prompt).trim().split(/\s+/)[0] ?? "";
+  const command = String(prompt).trim().split(/\s+/)[0] ?? "";
+  if (!command.startsWith("/")) {
+    return "";
+  }
+  return command.replace(/^\/+/, "");
 }
 
 function buildPromptInvocation(context, prompt) {
+  const skill = deriveSkillName(prompt);
   return {
     kind: "prompt",
-    skill: deriveSkillName(prompt),
+    skill,
+    label: skill ? `/${skill}` : "prompt",
     prompt,
     command: context.agent.command,
     args: context.agent.args.map((arg) => interpolateArg(arg, context, prompt)),

@@ -31,12 +31,18 @@ scenarios:
       - /archetipo-spec
       - /archetipo-plan US-001
 
+
+  # Spec + plam  US-001.
+  jira-init:
+    agent: pi-go-ds4-flash
+    fixture: fixtures/jira-prd
+    prompts:
+      
+
   # Implement worktree without integration
   from-plan-to-implement:
     agent: pi-go-ds4-flash
     fixture: fixtures/plan
-    archetipo_pre_commands:
-      - spec start US-001
     prompts:
       - /archetipo-implement US-001
 
@@ -55,5 +61,7 @@ scenarios:
   worktree-implement-no-integrate:
     agent: pi-go-ds4-flash
     fixture: fixtures/worktree-plan
+    archetipo_pre_commands:
+      - spec start US-001
     prompts:
       - /archetipo-implement US-001

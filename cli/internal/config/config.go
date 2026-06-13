@@ -293,11 +293,10 @@ func (c *Config) validate() error {
 		}
 	}
 	if c.Connector == ConnectorJira {
-		if c.Jira.BaseURL == "" {
-			return fmt.Errorf("config jira.base_url is required for the jira connector (e.g. https://acme.atlassian.net)")
-		}
-		if c.Jira.ProjectKey == "" {
-			return fmt.Errorf("config jira.project_key is required for the jira connector (e.g. ARCH)")
+		// project_key is optional: the connector auto-detects (or creates) the
+		// Jira project on first run and writes the key back via Save().
+		if c.Jira.BaseURL == "" && os.Getenv("JIRA_BASE_URL") == "" {
+			return fmt.Errorf("config jira.base_url is required for the jira connector (e.g. https://acme.atlassian.net), or export JIRA_BASE_URL")
 		}
 	}
 	return nil
@@ -353,7 +352,7 @@ func (c Config) AbsPath(p string) string {
 	return filepath.Join(c.ProjectRoot, p)
 }
 
-// Save patches the `github.owner` and `github.project_number` keys in the
+// Save patches the active connector's section (`github:` or `jira:`) in the
 // existing config file, preserving comments and the order of unrelated keys
 // via yaml.Node. If the file does not yet exist a fresh one is written from
 // the in-memory Config. When ProjectRoot is empty (e.g. tests using
@@ -368,19 +367,26 @@ func (c Config) Save() error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return fmt.Errorf("creating .archetipo dir: %w", err)
 		}
-		// Bootstrap: emit only the keys that matter for the github connector.
+		// Bootstrap: emit only the keys that matter for the active connector.
 		// applyDefaults() will fill the rest at next Load. Avoids marshalling
 		// the whole Config, whose nested types (domain.ConfigPaths /
 		// domain.StatusLabels) lack yaml tags and would emit broken keys.
-		gh := &yaml.Node{Kind: yaml.MappingNode}
-		upsertGitHubMapping(gh, c.GitHub)
+		section := &yaml.Node{Kind: yaml.MappingNode}
+		sectionKey := ConnectorGitHub
+		switch c.Connector {
+		case ConnectorJira:
+			sectionKey = ConnectorJira
+			upsertJiraMapping(section, c.Jira)
+		default:
+			upsertGitHubMapping(section, c.GitHub)
+		}
 		doc := &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
 		root := doc.Content[0]
 		root.Content = append(root.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "connector"},
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: c.Connector},
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "github"},
-			gh,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: sectionKey},
+			section,
 		)
 		out, err := yaml.Marshal(doc)
 		if err != nil {
@@ -395,7 +401,13 @@ func (c Config) Save() error {
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return fmt.Errorf("parsing %s: %w", path, err)
 	}
-	if err := upsertGitHubSection(&doc, c.GitHub); err != nil {
+	switch c.Connector {
+	case ConnectorJira:
+		err = upsertJiraSection(&doc, c.Jira)
+	default:
+		err = upsertGitHubSection(&doc, c.GitHub)
+	}
+	if err != nil {
 		return err
 	}
 	out, err := yaml.Marshal(&doc)
@@ -436,6 +448,43 @@ func upsertGitHubMapping(gh *yaml.Node, g GitHubConfig) {
 	if !projectFieldsEmpty(g.Fields) {
 		setMappingChild(gh, "fields", projectFieldsNode(g.Fields))
 	}
+}
+
+// upsertJiraSection finds (or creates) a top-level `jira:` mapping inside the
+// YAML document and ensures the resolved keys reflect j. Other keys under
+// `jira:` and elsewhere in the document are left untouched.
+func upsertJiraSection(doc *yaml.Node, j JiraConfig) error {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		// Empty or malformed document: rebuild a minimal mapping.
+		doc.Kind = yaml.DocumentNode
+		doc.Content = []*yaml.Node{{Kind: yaml.MappingNode}}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return fmt.Errorf("config root is not a mapping")
+	}
+	jr := findOrCreateChildMapping(root, "jira")
+	if jr == nil {
+		key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "jira"}
+		jr = &yaml.Node{Kind: yaml.MappingNode}
+		root.Content = append(root.Content, key, jr)
+	}
+	upsertJiraMapping(jr, j)
+	return nil
+}
+
+// upsertJiraMapping writes only the keys that hold a value: base_url stays out
+// of the file when it came from $JIRA_BASE_URL, and the secret-bearing keys
+// (token) are never part of JiraConfig in the first place.
+func upsertJiraMapping(jr *yaml.Node, j JiraConfig) {
+	setOptionalScalarChild(jr, "base_url", j.BaseURL)
+	setOptionalScalarChild(jr, "project_key", j.ProjectKey)
+	setOptionalScalarChild(jr, "email", j.Email)
+	setOptionalScalarChild(jr, "story_type", j.StoryType)
+	setOptionalScalarChild(jr, "subtask_type", j.SubtaskType)
+	setOptionalScalarChild(jr, "points_field", j.PointsField)
+	setStringMapChild(jr, "status_map", j.StatusMap)
+	setStringMapChild(jr, "priority_map", j.PriorityMap)
 }
 
 // findOrCreateChildMapping returns the value node for a given mapping key.
