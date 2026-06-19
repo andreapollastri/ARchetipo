@@ -326,8 +326,8 @@ func CommitWorktreeChanges(ctx context.Context, repoRoot, worktreeRel, code, tit
 			fmt.Sprintf("could not stage worktree changes for %s", code),
 			"inspect the worktree and retry `archetipo spec review`", err)
 	}
-		msg := ReviewCommitMessage(code, opts, title)
-		if _, err := runGitInDir(ctx, worktreeAbs, "commit", "-m", msg); err != nil {
+	msg := ReviewCommitMessage(code, opts, title)
+	if _, err := runGitInDir(ctx, worktreeAbs, "commit", "-m", msg); err != nil {
 		return iox.NewConflict(
 			fmt.Sprintf("could not commit worktree changes for %s", code),
 			"inspect the worktree and retry `archetipo spec review`", err)

@@ -556,16 +556,16 @@ func TestSpecReview_CommitsDirtyWorktreeBeforeReview(t *testing.T) {
 	if !strings.Contains(diff, "M\thello.txt") {
 		t.Fatalf("expected review diff to include modified hello.txt, got:\n%s", diff)
 	}
-		if !strings.Contains(diff, "A\tarchetipo.txt") {
-			t.Fatalf("expected review diff to include new archetipo.txt, got:\n%s", diff)
-		}
+	if !strings.Contains(diff, "A\tarchetipo.txt") {
+		t.Fatalf("expected review diff to include new archetipo.txt, got:\n%s", diff)
+	}
 
-		// Verify default commit subject (no --commit-type / --commit-summary flags).
-		subject := mustOutput(t, "git", "-C", worktree, "log", "-1", "--pretty=%s")
-		want := "chore(US-001): First"
-		if subject != want {
-			t.Fatalf("expected commit subject %q, got %q", want, subject)
-		}
+	// Verify default commit subject (no --commit-type / --commit-summary flags).
+	subject := mustOutput(t, "git", "-C", worktree, "log", "-1", "--pretty=%s")
+	want := "chore(US-001): First"
+	if subject != want {
+		t.Fatalf("expected commit subject %q, got %q", want, subject)
+	}
 }
 
 func TestSpecReview_CommitSubjectFeat(t *testing.T) {

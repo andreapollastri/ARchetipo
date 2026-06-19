@@ -45,3 +45,5 @@ cli/dist/
 cli/archetipo-bin
 
 *env*
+.plans
+graphify-out
