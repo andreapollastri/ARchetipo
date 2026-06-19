@@ -54,6 +54,16 @@ Le skill devono incorporare esplicitamente i sub-comandi CLI che usano davvero, 
 - Mantenere la conformance suite (`cli/internal/connector/conformance/`) verde su tutte le implementazioni: file, github, inmemory.
 - Tutte le query GraphQL del connector github vivono in `cli/internal/connector/github/templates.go`. Aggiungere snapshot test prima di modificarle.
 - Distribuzione: il binario è versionato insieme alle skill (un solo tag per repo). Su tag `v*` il workflow `release.yml` esegue GoReleaser per produrre le binary in `cli/dist/`, poi `scripts/build-npm.mjs` sincronizza le binary nei 6 sotto-pacchetti `@techreloaded/archetipo-{os}-{arch}` e le skill nel pacchetto principale `@techreloaded/archetipo`, infine `scripts/publish-npm.mjs` pubblica tutti i 7 pacchetti su npm.
+- **Prima di consegnare modifiche**, esegui gli stessi controlli della CI in locale per evitare build rossi:
+  ```bash
+  cd cli
+  gofmt -l .          # deve essere vuoto
+  go vet ./...        # nessun errore
+  go build ./...      # compilazione pulita
+  go test ./...       # tutti i test passano
+  golangci-lint run --timeout 5m ./...   # 0 issues
+  ```
+  Se `golangci-lint` non è installato: `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`
 
 ## Installazione (per utenti finali)
 

@@ -204,7 +204,7 @@ func (s *Server) handleIntegrate(w http.ResponseWriter, r *http.Request) {
 	}
 	// Clear persisted worktree metadata after a successful integrate.
 	emptyStr := ""
-	s.conn.UpdateSpec(ctx, code, domain.SpecUpdate{
+	_, _ = s.conn.UpdateSpec(ctx, code, domain.SpecUpdate{
 		Branch:   &emptyStr,
 		Worktree: &emptyStr,
 		ForkBase: &emptyStr,
