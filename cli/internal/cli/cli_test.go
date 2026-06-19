@@ -852,6 +852,88 @@ func TestPRDWrite_FromFileFlag(t *testing.T) {
 	}
 }
 
+func TestPRDWrite_EmptyStdin(t *testing.T) {
+	newProject(t)
+	// Seed an existing PRD so we can verify it is not overwritten.
+	seed := "# Original PRD\n\nThis content must survive."
+	seedRes := runCLI(t, seed, "prd", "write")
+	_, _ = decodeOK(t, seedRes)
+
+	// Attempt empty stdin write.
+	res := runCLI(t, "", "prd", "write")
+	exit, code := decodeError(t, res)
+	if exit != iox.ExitInvalidInput {
+		t.Fatalf("expected exit %d, got %d", iox.ExitInvalidInput, exit)
+	}
+	if code != iox.CodeInvalidInput {
+		t.Fatalf("expected code %s, got %s", iox.CodeInvalidInput, code)
+	}
+
+	// Verify existing PRD is untouched.
+	got, err := os.ReadFile("docs/PRD.md")
+	if err != nil {
+		t.Fatalf("reading PRD after empty write: %v", err)
+	}
+	if string(got) != seed {
+		t.Fatalf("PRD was overwritten!\noriginal: %q\ngot:      %q", seed, string(got))
+	}
+}
+
+func TestPRDWrite_EmptyFile(t *testing.T) {
+	newProject(t)
+	// Seed an existing PRD so we can verify it is not overwritten.
+	seed := "# Original PRD\n\nThis content must survive."
+	seedRes := runCLI(t, seed, "prd", "write")
+	_, _ = decodeOK(t, seedRes)
+
+	// Write an empty input file and pass it via --file.
+	emptyFile := writeInputFile(t, "empty.md", "")
+	res := runCLI(t, "", "prd", "write", "--file", emptyFile)
+	exit, code := decodeError(t, res)
+	if exit != iox.ExitInvalidInput {
+		t.Fatalf("expected exit %d, got %d", iox.ExitInvalidInput, exit)
+	}
+	if code != iox.CodeInvalidInput {
+		t.Fatalf("expected code %s, got %s", iox.CodeInvalidInput, code)
+	}
+
+	// Verify existing PRD is untouched.
+	got, err := os.ReadFile("docs/PRD.md")
+	if err != nil {
+		t.Fatalf("reading PRD after empty write: %v", err)
+	}
+	if string(got) != seed {
+		t.Fatalf("PRD was overwritten!\noriginal: %q\ngot:      %q", seed, string(got))
+	}
+}
+
+func TestPRDWrite_WhitespaceOnlyStdin(t *testing.T) {
+	newProject(t)
+	// Seed an existing PRD.
+	seed := "# Original PRD\n\nThis content must survive."
+	seedRes := runCLI(t, seed, "prd", "write")
+	_, _ = decodeOK(t, seedRes)
+
+	// Attempt whitespace-only stdin write.
+	res := runCLI(t, "   \n\t\n  ", "prd", "write")
+	exit, code := decodeError(t, res)
+	if exit != iox.ExitInvalidInput {
+		t.Fatalf("expected exit %d, got %d", iox.ExitInvalidInput, exit)
+	}
+	if code != iox.CodeInvalidInput {
+		t.Fatalf("expected code %s, got %s", iox.CodeInvalidInput, code)
+	}
+
+	// Verify existing PRD is untouched.
+	got, err := os.ReadFile("docs/PRD.md")
+	if err != nil {
+		t.Fatalf("reading PRD after whitespace write: %v", err)
+	}
+	if string(got) != seed {
+		t.Fatalf("PRD was overwritten!\noriginal: %q\ngot:      %q", seed, string(got))
+	}
+}
+
 func TestMetrics_AggregatesBacklogAndFlow(t *testing.T) {
 	newProject(t)
 	specs := `{"specs":[

@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/techreloaded-ar/ARchetipo/cli/internal/connector"
+	"github.com/techreloaded-ar/ARchetipo/cli/internal/iox"
 )
 
 // newPRDCmd builds `archetipo prd write` -> save_prd. The markdown body is
@@ -26,6 +28,9 @@ func newPRDWriteCmd(s streams) *cobra.Command {
 			body, err := readRawInput(s.in, filePath)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(string(body)) == "" {
+				return iox.NewInvalidInput("prd write requires non-empty markdown input", "provide PRD content via --file or stdin", nil)
 			}
 			return withConnector(cmd, s, "write_result", func(ctx context.Context, c connector.Connector) (any, error) {
 				return c.SavePRD(ctx, string(body))
